@@ -2,6 +2,15 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id), root = $('orbit-lab');
+  function setTheme(value){
+    const theme=value==='light'?'light':'dark';root.dataset.theme=theme;
+    document.documentElement.style.backgroundColor=theme==='light'?'#ffffff':'#050919';
+    document.body.style.backgroundColor=theme==='light'?'#ffffff':'#050919';
+    document.querySelector('meta[name="theme-color"]').content=theme==='light'?'#ffffff':'#050919';
+    root.querySelectorAll('[data-theme-toggle]').forEach(b=>{b.textContent=theme==='light'?'Dark':'Light';b.setAttribute('aria-label',`Switch to ${theme==='light'?'dark':'light'} mode`);});
+  }
+  // Only the color preference is persistent. No account or research data here.
+  try{setTheme(localStorage.getItem('orbit-color-theme'));}catch{setTheme('dark');}
   const names={home:'Overview',papers:'Papers',projects:'Projects',calendar:'Meeting Calendar',expenses:'Expenses',tasks:'Tasks & TA',signals:'Signals',members:'Members'};
   const glyphs={home:'◈',papers:'▤',projects:'◎',calendar:'▦',expenses:'◇',tasks:'☷',signals:'✦',members:'◉'};
   const tables=['members','projects','project_members','papers','expenses','tasks','calendar_slots','signals'];
@@ -14,7 +23,20 @@
   const monday=d=>addDays(d,-((new Date(d+'T12:00:00Z').getUTCDay()+6)%7));
   S.week=monday(dateNow());
   const date=d=>d?new Date(d+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}):'No deadline';
-  const time=h=>String(h).padStart(2,'0')+':00';
+  const time=h=>{const m=Math.round(h*60);return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');};
+  const startMinutes=s=>s.start_hour*60+(s.start_minute??0);
+  const duration=s=>s.duration_minutes??60;
+  const covers=(s,d,m)=>s.slot_date===d&&startMinutes(s)<=m&&m<startMinutes(s)+duration(s);
+  const repeatNames={weekly:'Weekly',biweekly:'Every 2 weeks',monthly:'Monthly (same date)'};
+  function repeatDates(start,until,repeat){
+    if(!start||!until||until<start||until>addDays(start,366))return [];
+    const dates=[],weekday=d=>![0,6].includes(new Date(d+'T12:00:00Z').getUTCDay());
+    if(repeat==='monthly'){
+      const seed=new Date(start+'T12:00:00Z'),day=seed.getUTCDate();
+      for(let i=0;i<=12;i++){const candidate=new Date(Date.UTC(seed.getUTCFullYear(),seed.getUTCMonth()+i,day,12));const d=candidate.toISOString().slice(0,10);if(candidate.getUTCDate()===day&&d>=start&&d<=until&&weekday(d))dates.push(d);}
+    }else for(let d=start;d<=until;d=addDays(d,repeat==='biweekly'?14:7))if(weekday(d))dates.push(d);
+    return dates;
+  }
   const safeURL=value=>{try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
   const external=url=>safeURL(url)?`<a class="o-link" href="${E(safeURL(url))}" target="_blank" rel="noopener noreferrer">Open external link ↗</a>`:'';
   const person=id=>S.rows.members.find(m=>m.id===id)?.display_name||'Unassigned';
@@ -42,7 +64,9 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
-    if(error?.code==='23505')return 'That time is already occupied. Refresh the calendar and choose another hour.';
+    if(['23505','23P01'].includes(error?.code))return 'That time overlaps an existing meeting or busy block. Refresh the calendar and choose another time.';
+    if(error?.code==='PGRST202'&&error?.message?.includes('orbit_availability_v2'))return 'The calendar database update is not installed yet. Ask your faculty administrator to apply migration 005, then retry.';
+    if(error?.code==='PGRST202'&&error?.message?.includes('orbit_create_meeting_series'))return 'Recurring meetings need database update 006. Ask your faculty administrator to apply it before booking a series.';
     if(error?.code==='PGRST116')return 'This record changed or is no longer editable. Close this dialog and refresh.';
     if(error?.code==='42501')return 'You do not have permission for this action. Ask your faculty administrator if access needs to change.';
     return error?.message||'The request failed. Check your connection and try again.';
@@ -88,7 +112,7 @@
       if(generation!==S.loading)return;
       if(!me?.active){clearWorkspace();S.me=me;authScreen('pending');return;}
       const [datasets,occ,directory]=await Promise.all([
-        Promise.all(tables.map(fetchAll)),rpc('orbit_availability',{p_from:S.week,p_to:addDays(S.week,4)}),
+        Promise.all(tables.map(fetchAll)),rpc('orbit_availability_v2',{p_from:S.week,p_to:addDays(S.week,4)}),
         me.role==='faculty'?rpc('orbit_member_directory'):Promise.resolve([])
       ]);
       if(generation!==S.loading||S.session?.user.id!==userId)return;
@@ -148,19 +172,19 @@
   function home(){
     const papers=activeRows('papers').filter(p=>p.current_holder_id===uid());
     const tasks=activeRows('tasks').filter(t=>!t.done&&(faculty()||t.owner_id===uid())).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
-    const upcoming=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&!s.cancelled_at&&s.slot_date>=dateNow()).sort((a,b)=>(a.slot_date+time(a.start_hour)).localeCompare(b.slot_date+time(b.start_hour))).slice(0,2);
+    const upcoming=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&!s.cancelled_at&&s.slot_date>=dateNow()).sort((a,b)=>(a.slot_date+time(startMinutes(a)/60)).localeCompare(b.slot_date+time(startMinutes(b)/60))).slice(0,2);
     return heading('ORBIT LAB · YOUR RESEARCH, IN ORBIT.',`Welcome back, ${S.me.display_name}.`,'Good taste, shared context, research in motion.',button('+ New task','data-edit="tasks" data-id="new"',true))+
       `<div class="o-stat-grid"><div class="o-stat"><strong>${activeRows('projects').length}</strong><span>Projects in orbit</span></div><div class="o-stat"><strong>${papers.length}</strong><span>Papers on your desk</span></div><div class="o-stat"><strong>${tasks.length}</strong><span>Open tasks</span></div></div><div class="o-layout"><div class="o-stack"><section><div class="o-panel-head"><h2>On your desk</h2>${button('All papers ↗','data-view="papers"')}</div><div class="o-stack">${papers.slice(0,4).map(p=>recordCard('papers',p)).join('')||empty('Nothing waiting on you right now.')}</div></section><section><div class="o-panel-head"><h2>In orbit</h2>${button('All projects ↗','data-view="projects"')}</div><div class="o-grid">${activeRows('projects').slice(0,2).map(p=>recordCard('projects',p)).join('')||empty('Your next research question starts here.')}</div></section></div><div class="o-stack"><section><div class="o-panel-head"><h2>Next meetings</h2></div>${upcoming.map(meetingCard).join('')||empty('No upcoming meetings.')}<div class="o-section-space">${button('Open calendar →','data-view="calendar"')}</div></section><section><div class="o-panel-head"><h2>Coming up</h2></div><div class="o-stack">${tasks.slice(0,2).map(t=>recordCard('tasks',t)).join('')||empty('All caught up.')}</div></section></div></div>`;
   }
-  function meetingCard(s){return `<article class="o-card"><div class="o-card-top">${badge(s.cancelled_at?'Cancelled':'1 hour',s.cancelled_at?'warm':'purple')}</div><h3>${E(s.topic||'Busy block')}</h3><div class="o-card-meta">${E(date(s.slot_date))} · ${time(s.start_hour)}–${time(s.start_hour+1)} · ${E(person(s.owner_id))}</div><p>${E(s.location)}${s.notes?' · '+E(s.notes):''}</p><div class="o-card-actions">${s.cancelled_at?(faculty()?button('Delete permanently',`data-delete="meetings" data-id="${s.id}"`):''):button('Manage','data-booking="'+s.id+'"')}</div></article>`;}
+  function meetingCard(s){return `<article class="o-card"><div class="o-card-top">${badge(s.cancelled_at?'Cancelled':duration(s)+' min',s.cancelled_at?'warm':'purple')}${s.series_id?badge(repeatNames[s.repeat_rule]||'Recurring','blue'):''}</div><h3>${E(s.topic||'Busy block')}</h3><div class="o-card-meta">${E(date(s.slot_date))} · ${time(startMinutes(s)/60)}–${time((startMinutes(s)+duration(s))/60)} · ${E(person(s.owner_id))}</div><p>${E(s.location)}${s.notes?' · '+E(s.notes):''}</p>${s.series_id?`<p>Series ends ${E(s.repeat_until)} · Changes apply to this occurrence only.</p>`:''}<div class="o-card-actions">${s.cancelled_at?(faculty()?button('Delete permanently',`data-delete="meetings" data-id="${s.id}"`):''):button('Manage','data-booking="'+s.id+'"')}</div></article>`;}
   function calendar(){
     const days=Array.from({length:5},(_,i)=>addDays(S.week,i));
     const records=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&(S.filter==='archived'?!!s.cancelled_at:!s.cancelled_at)&&days.includes(s.slot_date));
-    return heading('MAKE TIME FOR GOOD QUESTIONS.','Meeting Calendar','Monday–Friday · 09:00–17:00 · 1-hour meetings · Asia/Shanghai')+
-      `<div class="o-toolbar">${button('←','data-week="-7" aria-label="Previous week"')}<strong>${date(days[0])}–${date(days[4])}, ${days[0].slice(0,4)}</strong>${button('→','data-week="7" aria-label="Next week"')}${button('This week','data-this-week')}${faculty()?button(S.busyMode?'Done editing availability':'Edit availability','data-busy-mode',S.busyMode):''}</div><div class="o-note">${S.busyMode?'Click an open slot to mark it busy. Click a busy slot to reopen it.':'Choose an available hour. Other students’ meeting details stay private.'}</div><div class="o-week-grid">${days.map(d=>`<section class="o-day"><div class="o-day-title">${new Date(d+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'})}<span>${date(d)}</span></div>${Array.from({length:8},(_,i)=>{
-      const h=i+9,occ=S.occupancy.find(x=>x.slot_date===d&&x.start_hour===h),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&x.slot_date===d&&x.start_hour===h);
+    return heading('MAKE TIME FOR GOOD QUESTIONS.','Meeting Calendar','Monday–Friday · 09:00–17:00 · 30-minute slots · Asia/Shanghai')+
+      `<div class="o-toolbar">${button('←','data-week="-7" aria-label="Previous week"')}<strong>${date(days[0])}–${date(days[4])}, ${days[0].slice(0,4)}</strong>${button('→','data-week="7" aria-label="Next week"')}${button('This week','data-this-week')}${faculty()?button(S.busyMode?'Done editing availability':'Edit availability','data-busy-mode',S.busyMode):''}</div><div class="o-note">${S.busyMode?'Click an open slot to mark 30 minutes busy. Click a busy slot to reopen its entire block.':'Choose an available time. Meetings default to 30 minutes; 1 hour is also available. Other students’ meeting details stay private.'}</div><div class="o-week-grid">${days.map(d=>`<section class="o-day"><div class="o-day-title">${new Date(d+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'})}<span>${date(d)}</span></div>${Array.from({length:16},(_,i)=>{
+      const m=9*60+i*30,occ=S.occupancy.find(x=>covers(x,d,m)),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&covers(x,d,m));
       const disabled=!!occ&&!(own&&(faculty()||own.owner_id===uid()));
-      return `<button class="o-slot ${occ?(occ.kind==='busy'?'busy':'booked'):''}" data-slot="${d}/${h}" ${disabled?'disabled':''}><span>${time(h)}</span><small>${occ?(occ.kind==='busy'?'Busy':own?E(person(own.owner_id)):'Booked'):'Available'}</small></button>`;
+      return `<button class="o-slot ${occ?(occ.kind==='busy'?'busy':'booked'):''}" data-slot="${d}/${m}" ${disabled?'disabled':''}><span>${time(m/60)}</span><small>${occ?(occ.kind==='busy'?'Busy':own?E(person(own.owner_id)):'Booked'):'Available'}</small></button>`;
     }).join('')}</section>`).join('')}</div><div class="o-section-space"><div class="o-filters">${button('Scheduled','data-filter="active" aria-pressed="'+(S.filter!=='archived')+'"')}${button('Cancelled history','data-filter="archived" aria-pressed="'+(S.filter==='archived')+'"')}</div><div class="o-grid">${records.map(meetingCard).join('')||empty('No meetings in this view for the selected week.')}</div></div>`;
   }
   function members(){return heading('PEOPLE, NOT PERMISSIONS GUESSWORK.','Members','Names and roles are separate from login credentials.',button('+ Activate student','data-activate',true))+`<div class="o-note">Create or invite the student’s account in Supabase Authentication first. Once the email is confirmed, activate membership here. This button does not send an invitation email.</div><div class="o-grid">${S.directory.map(m=>`<article class="o-card"><div class="o-card-top">${badge(m.role==='faculty'?'Faculty':'Student')}${badge(m.active?'Active':'Inactive',m.active?'green':'warm')}</div><h3>${E(m.display_name)}</h3><p>${E(m.email)}</p>${m.role==='student'?button(m.active?'Revoke access':'Reactivate',`data-member-state="${m.id}" data-active="${!m.active}"`):'<p>Full workspace access</p>'}</article>`).join('')}</div>`;}
@@ -195,8 +219,21 @@
     if(old?.cancelled_at)return;
     const students=S.rows.members.filter(m=>m.active&&m.role==='student');
     if(faculty()&&!old&&!students.length){toast('Activate a student in Members before booking for them. You can still mark your busy hours.');return;}
-    const r=old||{slot_date:d,start_hour:h,owner_id:faculty()?students[0]?.id:uid(),location:'Office'};
-    modal(old?'Manage meeting':'Book a meeting',`<form data-form="booking"><div class="o-fields">${input('Discussion topic','topic',r.topic,'text','required maxlength="300"')}${select('Student','owner_id',faculty()?people():[[uid(),person(uid())]],r.owner_id,'required')}${input('Date','slot_date',r.slot_date,'date','required')}${select('Time · 1 hour','start_hour',Array.from({length:8},(_,i)=>[i+9,`${time(i+9)}–${time(i+10)}`]),r.start_hour)}${input('Location / format','location',r.location,'text','maxlength="200"')}${textarea('Notes / meeting link','notes',r.notes)}</div><p class="o-feedback">Monday–Friday · 09:00–17:00 · Asia/Shanghai</p>${formActions(old?'Save / reschedule':'Book meeting')}${old?`<div class="o-section-space">${button('Cancel this meeting',`data-cancel="${old.id}"`)}</div>`:''}</form>`,{old});
+    const r=old||{slot_date:d,start_hour:Math.floor(h/60),start_minute:h%60,duration_minutes:30,owner_id:faculty()?students[0]?.id:uid(),location:'Office'};
+    modal(old?'Manage meeting':'Book a meeting',`<form data-form="booking"><div class="o-fields">${input('Discussion topic','topic',r.topic,'text','required maxlength="300"')}${select('Student','owner_id',faculty()?people():[[uid(),person(uid())]],r.owner_id,'required')}${input('Date','slot_date',r.slot_date,'date','required')}${select('Start time','start_minutes',Array.from({length:16},(_,i)=>[540+i*30,time(9+i/2)]),startMinutes(r))}${select('Duration','duration_minutes',[[30,'30 minutes'],[60,'1 hour']],duration(r))}${input('Location / format','location',r.location,'text','maxlength="200"')}${!old?select('Repeat','repeat_rule',[['none','Does not repeat'],...Object.entries(repeatNames)],'none')+input('Repeat until (required; within 1 year)','repeat_until','','date','disabled'):''}${textarea('Notes / meeting link','notes',r.notes)}</div><p class="o-feedback" id="booking-summary" aria-live="polite"></p>${!old?'<div id="repeat-preview" class="o-note" hidden></div>':r.series_id?`<p class="o-note">${E(repeatNames[r.repeat_rule])} · ends ${E(r.repeat_until)}. Edits affect this occurrence only. To change the series, cancel its future occurrences and create a new series.</p>`:''}<p class="o-feedback">Monday–Friday · 09:00–17:00 · Asia/Shanghai</p>${formActions(old?'Save / reschedule':'Book meeting')}${old?`<div class="o-section-space o-card-actions">${button('Cancel this meeting',`data-cancel="${old.id}"`)}${old.series_id?button('Cancel remaining series',`data-cancel-series="${old.id}"`):''}</div>`:''}</form>`,{old});
+    const booking=$('o-dialog-body').querySelector('form');
+    if(old?.series_id)booking.elements.slot_date.max=old.repeat_until;
+    bookingSummary(booking);
+  }
+  function bookingSummary(form){
+    const start=form.elements.start_minutes,mins=Number(start.value),length=Number(form.elements.duration_minutes.value),valid=mins+length<=1020;
+    start.setCustomValidity(valid?'':'Meetings must end by 17:00. Choose an earlier start or 30 minutes.');$('booking-summary').textContent=valid?`${time(mins/60)}–${time((mins+length)/60)} · ${length} minutes`:'Meetings must end by 17:00. Choose an earlier start or 30 minutes.';
+    if(!form.elements.repeat_rule)return;
+    const rule=form.elements.repeat_rule.value,end=form.elements.repeat_until,from=form.elements.slot_date.value,repeating=rule!=='none';
+    end.disabled=!repeating;end.required=repeating;end.min=from;end.max=from?addDays(from,366):'';end.closest('label').hidden=!repeating;
+    const preview=$('repeat-preview');preview.hidden=!repeating;if(!repeating)return;
+    const dates=repeatDates(from,end.value,rule);
+    preview.innerHTML=(dates.length?`<strong>${dates.length} meeting${dates.length===1?'':'s'} · through ${E(end.value)} (inclusive)</strong><details><summary>Review all dates</summary><ul>${dates.map(d=>`<li>${E(d)} · ${time(mins/60)}–${time((mins+length)/60)}</li>`).join('')}</ul></details>`:'Choose an end date to preview the meetings.')+`<p>All occurrences must be available; any conflict stops the whole series.${rule==='monthly'?' Same calendar date each month. Weekends and nonexistent dates are skipped, never shifted.':''}</p>`;
   }
   function projectMembers(id){const p=project(id);if(!p||!faculty())return;modal('Project members',`<p class="o-sub">${E(p.name)}. Each change is saved immediately. Faculty always retains access.</p><div class="o-members-list">${S.rows.members.filter(m=>m.active).map(m=>`<label class="o-member-check"><input type="checkbox" data-membership="${m.id}" data-project="${p.id}" ${S.rows.project_members.some(x=>x.member_id===m.id&&x.project_id===id)?'checked':''}>${E(m.display_name)} · ${E(m.role)}</label>`).join('')}</div><div class="o-error" role="alert"></div><div class="o-dialog-actions">${button('Done','data-close')}</div>`);}
   function account(){modal('My account',`<p class="o-sub">${E(S.session.user.email)}</p><form data-form="profile"><div class="o-fields">${input('Display name','display_name',S.me.display_name,'text','required maxlength="100"')}</div>${formActions('Save name')}</form><div class="o-section-space">${button('Change password','data-change-password')}</div>`);}
@@ -227,8 +264,15 @@
     await mutate(async()=>{
       if(form.dataset.form==='record')return saveRecord(form,context);
       if(form.dataset.form==='booking'){
-        const payload={slot_date:get('slot_date'),start_hour:Number(get('start_hour')),owner_id:faculty()?get('owner_id'):uid(),kind:'meeting',topic:get('topic'),location:get('location'),notes:get('notes')};
+        const mins=Number(get('start_minutes')),length=Number(get('duration_minutes'));
+        if(!Number.isInteger(mins)||mins%30!==0||mins<540||![30,60].includes(length)||mins+length>1020)throw new Error('Choose a half-hour start between 09:00 and 16:30, ending by 17:00.');
+        const payload={slot_date:get('slot_date'),start_hour:Math.floor(mins/60),start_minute:mins%60,duration_minutes:length,owner_id:faculty()?get('owner_id'):uid(),kind:'meeting',topic:get('topic'),location:get('location'),notes:get('notes')};
         const day=new Date(payload.slot_date+'T12:00:00Z').getUTCDay();if(day===0||day===6)throw new Error('Choose Monday through Friday.');
+        if(!context.old&&get('repeat_rule')!=='none'){
+          const rule=get('repeat_rule'),until=get('repeat_until');
+          if(!repeatNames[rule]||!repeatDates(payload.slot_date,until,rule).length)throw new Error('Choose a valid repeat schedule and an end date within one year.');
+          return rpc('orbit_create_meeting_series',{p_owner_id:payload.owner_id,p_topic:payload.topic,p_start_date:payload.slot_date,p_start_minutes:mins,p_duration_minutes:length,p_repeat_rule:rule,p_until:until,p_location:payload.location,p_notes:payload.notes});
+        }
         return unwrap(await (context.old?db.from('orbit_calendar_slots').update(payload).eq('id',context.old.id).eq('updated_at',context.old.updated_at):db.from('orbit_calendar_slots').insert(payload)).select('id').single());
       }
       if(form.dataset.form==='delete')return rpc('orbit_delete_record',{p_entity:context.type,p_id:context.id,p_confirmation:get('confirmation')});
@@ -239,6 +283,7 @@
   });
   root.addEventListener('click',async event=>{
     const b=event.target.closest('button');if(!b||b.disabled)return;
+    if(b.hasAttribute('data-theme-toggle')){setTheme(root.dataset.theme==='light'?'dark':'light');try{localStorage.setItem('orbit-color-theme',root.dataset.theme);}catch{}return;}
     if(b.hasAttribute('data-close'))return close();
     if(b.hasAttribute('data-signout'))return signOut();
     if(!S.ready)return;
@@ -253,14 +298,16 @@
     if(b.dataset.delete)return deleteDialog(b.dataset.delete,b.dataset.id);
     if(b.dataset.cancel){const id=b.dataset.cancel;modal('Cancel meeting',`<p class="o-sub">Cancel this meeting and release its time slot? Its record will remain in cancelled history.</p><div class="o-error" role="alert"></div><div class="o-dialog-actions">${button('Keep meeting','data-close')}${button('Cancel meeting',`data-confirm-cancel="${id}"`,true)}</div>`);return;}
     if(b.dataset.confirmCancel)return mutate(()=>rpc('orbit_cancel_slot',{p_id:b.dataset.confirmCancel}),'Meeting cancelled. The time slot is available again.');
+    if(b.dataset.cancelSeries){const r=row('calendar_slots',b.dataset.cancelSeries);if(!r?.series_id)return;const from=r.slot_date>dateNow()?r.slot_date:dateNow();modal('Cancel remaining series',`<p class="o-sub">${E(r.topic)} — cancel ${faculty()?'all active':'all of your active'} occurrences in this series from ${E(from)} through ${E(r.repeat_until)}? Earlier occurrences stay unchanged. Cancelled records remain in history.</p><div class="o-error" role="alert"></div><div class="o-dialog-actions">${button('Keep series','data-close')}${button('Cancel remaining series',`data-confirm-series="${r.id}" data-from="${from}"`,true)}</div>`);return;}
+    if(b.dataset.confirmSeries)return mutate(()=>rpc('orbit_cancel_meeting_series',{p_id:b.dataset.confirmSeries,p_from:b.dataset.from}),'Remaining series cancelled. Earlier occurrences were kept.');
     if(b.hasAttribute('data-busy-mode')){if(faculty()){S.busyMode=!S.busyMode;render();}return;}
     if(b.dataset.week||b.hasAttribute('data-this-week')){S.week=b.hasAttribute('data-this-week')?monday(dateNow()):addDays(S.week,Number(b.dataset.week));return loadWorkspace({silent:true});}
     if(b.dataset.booking)return bookingForm(b.dataset.booking);
     if(b.dataset.slot){
-      const [d,h]=b.dataset.slot.split('/'),hour=Number(h),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&x.slot_date===d&&x.start_hour===hour),occ=S.occupancy.find(x=>x.slot_date===d&&x.start_hour===hour);
+      const [d,h]=b.dataset.slot.split('/'),mins=Number(h),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&covers(x,d,mins)),occ=S.occupancy.find(x=>covers(x,d,mins));
       if(own?.kind==='meeting')return bookingForm(own.id);
-      if(faculty()&&S.busyMode)return mutate(()=>own?.kind==='busy'?rpc('orbit_cancel_slot',{p_id:own.id}):db.from('orbit_calendar_slots').insert({slot_date:d,start_hour:hour,kind:'busy'}).select('id').single().then(unwrap),own?'Slot reopened.':'Marked busy.');
-      if(!occ)return bookingForm(null,d,hour);return;
+      if(faculty()&&S.busyMode)return mutate(()=>own?.kind==='busy'?rpc('orbit_cancel_slot',{p_id:own.id}):db.from('orbit_calendar_slots').insert({slot_date:d,start_hour:Math.floor(mins/60),start_minute:mins%60,duration_minutes:30,kind:'busy'}).select('id').single().then(unwrap),own?'Busy block reopened.':'Marked 30 minutes busy.');
+      if(!occ)return bookingForm(null,d,mins);return;
     }
     if(b.hasAttribute('data-activate')&&faculty()){modal('Activate student',`<form data-form="activate"><p class="o-sub">The account must already exist in Supabase Auth with a confirmed email. No password is collected here.</p><div class="o-fields">${input('Student name','display_name','','text','required maxlength="100"')}${input('Confirmed email','email','','email','required')}</div>${formActions('Activate membership')}</form>`);return;}
     if(b.dataset.memberState&&faculty()){
@@ -270,7 +317,8 @@
     if(b.dataset.confirmMember)return mutate(()=>rpc('orbit_set_student_active',{p_id:b.dataset.confirmMember,p_active:b.dataset.active==='true'}),'Membership updated.');
   });
   root.addEventListener('change',async event=>{
-    const el=event.target;if(!el.dataset.membership||!faculty()||S.saving)return;
+    const el=event.target;if(el.closest('form[data-form="booking"]'))bookingSummary(el.closest('form'));
+    if(!el.dataset.membership||!faculty()||S.saving)return;
     const id=el.dataset.membership,projectId=el.dataset.project,checked=el.checked;el.disabled=true;S.saving=true;
     try{
       if(checked)unwrap(await db.from('orbit_project_members').insert({project_id:projectId,member_id:id}));
