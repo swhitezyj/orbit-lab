@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#050919">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3; style-src 'self' 'unsafe-inline'; connect-src https://sppccrwkjbbktryxvjuq.supabase.co; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>ORBIT Lab — Research in motion</title>
+  <link rel="icon" href="./orbit.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
+  <script defer src="./config.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+<div id="orbit-lab">
+  <section id="auth-screen" class="o-auth o-main" aria-labelledby="auth-title">
+    <div class="o-auth-layout">
+      <div class="o-auth-story"><div class="o-wordmark">ORBIT <small>LAB</small></div><div class="o-kicker">A PRIVATE RESEARCH COMMONS</div><h1>Good taste,<br>shared context,<br><em>research in motion.</em></h1><p>Open Research on Behavior,<br>Intelligence &amp; Technology</p><div class="o-auth-orbit" aria-hidden="true"><span>✦</span></div></div>
+      <div class="o-auth-card"><div class="o-kicker">WELCOME TO YOUR ORBIT</div><h2 id="auth-title">Sign in</h2><p id="auth-intro">An invitation-only workspace for your research group.</p>
+        <form id="auth-form"><label class="o-field" id="email-field">Email<input id="auth-email" name="email" type="email" autocomplete="username" required></label><label class="o-field" id="password-field">Password<input id="auth-password" name="password" type="password" autocomplete="current-password" required></label><label class="o-field" id="confirm-field" hidden>Confirm password<input id="auth-confirm" name="confirm" type="password" autocomplete="new-password"></label><div id="auth-error" class="o-error" role="alert"></div><button id="auth-submit" class="o-btn primary" type="submit" disabled>Connecting…</button></form>
+        <div class="o-auth-links"><button id="forgot-password" class="o-text-btn" type="button">Forgot password?</button><button id="back-login" class="o-text-btn" type="button" hidden>Back to sign in</button><button id="auth-signout" class="o-text-btn" type="button" hidden>Sign out</button><button id="auth-retry" class="o-text-btn" type="button" hidden>Try again</button></div><p class="o-auth-fine">Members only. No public registration.</p>
+      </div>
+    </div>
+  </section>
+  <div class="o-shell" id="workspace" hidden>
+    <aside class="o-side"><div class="o-brand"><span class="o-brand-mark" aria-hidden="true">◎</span><div><div class="o-brand-name">ORBIT <small>LAB</small></div><div class="o-brand-sub">RESEARCH IN MOTION</div></div></div><div><div class="o-side-label">WORKSPACE</div><nav class="o-nav" id="main-nav" aria-label="Main navigation"></nav></div><div id="project-nav" class="o-project-nav"></div><div class="o-side-foot"><span class="o-avatar" id="user-avatar"></span><div><div id="user-name"></div><div class="o-muted" id="user-role"></div></div></div><button class="o-btn" data-account>My account</button><button class="o-text-btn" data-signout>Sign out</button></aside>
+    <main class="o-main"><header class="o-top"><div class="o-crumb">Workspace / <span id="crumb">Overview</span></div><div class="o-top-actions"><span class="o-live">● Private workspace</span><button class="o-btn small" data-refresh>Refresh</button></div></header><div class="o-content" id="o-content"></div></main>
+  </div>
+  <div class="o-overlay" id="o-overlay" hidden><section class="o-dialog" role="dialog" aria-modal="true" aria-labelledby="o-dialog-title"><div class="o-dialog-head"><h2 id="o-dialog-title"></h2><button class="o-close" aria-label="Close dialog" data-close>×</button></div><div id="o-dialog-body"></div></section></div>
+  <div id="o-toast" class="o-toast" role="status" aria-live="polite" hidden></div>
+  <noscript><p>This private workspace requires JavaScript. Enable it to sign in.</p></noscript>
+</div>
+</body>
+</html>
