@@ -501,3 +501,26 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 #orbit-lab .o-kicker,#orbit-lab .o-side-label,#orbit-lab .o-rq-label,#orbit-lab .o-muted,#orbit-lab .o-footer,#orbit-lab .o-side-institution span{font-size:14px}
 #orbit-lab .o-badge,#orbit-lab .o-week-grid .o-slot small{font-size:14px}
 @media(max-width:560px){#orbit-lab .o-side-institution{flex-wrap:wrap}#orbit-lab .o-side-institution span{font-size:14px}}
+
+/* Research map: disclosure before detail, shared summaries before private work. */
+#orbit-lab .o-research-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+#orbit-lab .o-research-details{border:1px solid var(--o-border);border-radius:5px;min-width:0;background:var(--o-panel);overflow-wrap:anywhere}
+#orbit-lab .o-research-details>summary{cursor:pointer;padding:20px;list-style:revert;font-size:17px;line-height:1.6;min-height:56px}
+#orbit-lab .o-research-details>summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+#orbit-lab .o-research-details>summary::marker{color:var(--o-muted)}
+#orbit-lab .o-research-title{font-family:'ORBIT Cormorant',Georgia,serif;font-size:26px;font-weight:600;margin-right:16px;line-height:1.3}
+#orbit-lab .o-research-count{display:inline-block;font-size:15px;margin:0 14px 0 0;color:var(--o-muted)}
+#orbit-lab .o-research-map{display:grid;gap:16px}
+#orbit-lab .o-program-body,#orbit-lab .o-study-body{padding:0 20px 20px;min-width:0}
+#orbit-lab .o-program-body>.o-card-actions{margin:18px 0}
+#orbit-lab .o-study{align-self:start;background:transparent}
+#orbit-lab .o-study>summary .o-research-title{display:block;margin:0 0 8px}
+#orbit-lab .o-study-body p,#orbit-lab .o-program-body p{font-size:17px;line-height:1.7;white-space:pre-wrap}
+#orbit-lab .o-research-paper{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--o-border);font-size:17px;min-width:0}
+#orbit-lab .o-research-paper>span:first-child{flex:1;min-width:120px;overflow-wrap:anywhere}
+#orbit-lab .o-research-tools{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:22px 0}
+#orbit-lab .o-research-tools>.o-field:first-child{flex:1;min-width:200px}
+#orbit-lab .o-research-details>.o-collection,#orbit-lab .o-research-details>.o-view-toolbar,#orbit-lab .o-research-details>.o-sub,#orbit-lab .o-research-details>.o-research-paper{margin:16px 20px}
+#orbit-lab .o-study-summary{align-self:start}
+@media(max-width:900px){#orbit-lab .o-research-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){#orbit-lab .o-research-details>summary{padding:16px}#orbit-lab .o-research-title{font-size:24px}#orbit-lab .o-program-body,#orbit-lab .o-study-body{padding:0 12px 16px}#orbit-lab .o-research-count{display:block;margin:6px 0}#orbit-lab .o-research-tools>.o-field{width:100%}#orbit-lab .o-research-stats .o-stat{padding:14px}}
