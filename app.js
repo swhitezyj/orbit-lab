@@ -15,7 +15,7 @@
   const glyphs={home:'◈',papers:'▤',projects:'◎',calendar:'▦',expenses:'◇',tasks:'☷',signals:'✦',members:'◉'};
   const tables=['members','projects','project_members','papers','expenses','tasks','calendar_slots','signals'];
   const emptyRows=()=>Object.fromEntries(tables.map(t=>[t,[]]));
-  const S={session:null,me:null,rows:emptyRows(),directory:[],occupancy:[],view:'home',filter:'active',busyMode:false,loading:0,ready:false,saving:false};
+  const S={session:null,me:null,rows:emptyRows(),directory:[],occupancy:[],commons:[],commonsError:'',layouts:{papers:'cards',projects:'cards',commons:'cards'},view:'home',filter:'active',busyMode:false,loading:0,ready:false,saving:false};
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const E=escape, faculty=()=>S.me?.role==='faculty'&&S.me.active, uid=()=>S.me?.id;
   const dateNow=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -93,7 +93,16 @@
     $('auth-error').textContent=message;
     if(!formVisible&&message)$('auth-intro').textContent+=' '+message;
   }
-  function clearWorkspace(){S.loading++;S.ready=false;S.me=null;S.rows=emptyRows();S.directory=[];S.occupancy=[];$('o-content').innerHTML='';$('main-nav').innerHTML='';$('project-nav').innerHTML='';$('user-name').textContent='';$('user-role').textContent='';$('user-avatar').textContent='';$('o-dialog-body').innerHTML='';$('o-dialog-title').textContent='';$('o-toast').textContent='';$('o-toast').hidden=true;S.saving=false;close();}
+  function clearWorkspace(){S.loading++;S.ready=false;S.me=null;S.rows=emptyRows();S.directory=[];S.occupancy=[];S.commons=[];S.commonsError='';S.layouts={papers:'cards',projects:'cards',commons:'cards'};$('o-content').innerHTML='';$('main-nav').innerHTML='';$('project-nav').innerHTML='';$('user-name').textContent='';$('user-role').textContent='';$('user-avatar').textContent='';$('o-dialog-body').innerHTML='';$('o-dialog-title').textContent='';$('o-toast').textContent='';$('o-toast').hidden=true;S.saving=false;close();}
+  async function fetchCommons(){
+    const rows=[];
+    for(let offset=0;offset<20000;offset+=1000){
+      const batch=await rpc('orbit_project_overview',{p_offset:offset});
+      if(!Array.isArray(batch))throw new Error('Project overview returned an invalid response.');
+      rows.push(...batch);if(batch.length<1000)return {rows,error:''};
+    }
+    throw new Error('The project overview exceeds its list limit. Contact the administrator.');
+  }
   async function fetchAll(type){
     const rows=[];
     for(let offset=0;offset<20000;offset+=1000){
@@ -111,12 +120,13 @@
       const me=unwrap(await db.from('orbit_members').select('*').eq('id',userId).maybeSingle());
       if(generation!==S.loading)return;
       if(!me?.active){clearWorkspace();S.me=me;authScreen('pending');return;}
-      const [datasets,occ,directory]=await Promise.all([
+      const [datasets,occ,directory,commons]=await Promise.all([
         Promise.all(tables.map(fetchAll)),rpc('orbit_availability_v2',{p_from:S.week,p_to:addDays(S.week,4)}),
-        me.role==='faculty'?rpc('orbit_member_directory'):Promise.resolve([])
+        me.role==='faculty'?rpc('orbit_member_directory'):Promise.resolve([]),
+        fetchCommons().catch(error=>({rows:[],error:error?.code==='PGRST202'?'Lab overview needs database update 007. Your existing workspace is still available.':errorText(error)}))
       ]);
       if(generation!==S.loading||S.session?.user.id!==userId)return;
-      S.me=me;S.rows=Object.fromEntries(tables.map((t,i)=>[t,datasets[i]]));S.occupancy=occ;S.directory=directory;S.ready=true;
+      S.me=me;S.rows=Object.fromEntries(tables.map((t,i)=>[t,datasets[i]]));S.occupancy=occ;S.directory=directory;S.commons=commons.rows;S.commonsError=commons.error;S.ready=true;
       if(needPassword){authScreen('password');return;}
       $('auth-screen').hidden=true;$('workspace').hidden=false;render();
       if(!silent)toast('Workspace is up to date.');
@@ -166,21 +176,26 @@
     const subtitles={papers:'Who owns it. Who has it. What happens next.',projects:'People, research questions, and the current state of the work.',expenses:'Amounts, receipt handoffs, token usage, and reimbursement progress.',tasks:'What needs doing, who has it, and when it is due.',signals:'Good papers, useful tools, and small discoveries.'};
     const add={papers:'Add paper',projects:'New project',expenses:'Add expense',tasks:'Add task',signals:'Share a signal'};
     const records=visibleRows(type).sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
-    return heading('RESEARCH IN MOTION',names[type],subtitles[type],button('+ '+add[type],`data-edit="${type}" data-id="new"`,true))+filters()+
-      (records.length?`<div class="o-grid">${records.map(r=>recordCard(type,r)).join('')}</div>`:empty(S.filter==='archived'?'Nothing archived here.':'Nothing here yet. Add the first record when you are ready.'));
+    return heading('YZ LAB / RESEARCH WORKSPACE',names[type],subtitles[type],button('+ '+add[type],`data-edit="${type}" data-id="new"`,true))+(type==='projects'?commonsPanel()+'<h2 class="o-section-space">Your project workspace</h2><p class="o-sub">Details and editing remain limited to your existing permissions.</p>':'')+`<div class="o-view-toolbar">${filters()}${['papers','projects'].includes(type)?layoutToggle(type):''}</div>`+
+      (records.length?collection(type,records):empty(S.filter==='archived'?'Nothing archived here.':'Nothing here yet. Add the first record when you are ready.'));
+  }
+  function layoutToggle(key){return `<div class="o-layout-toggle" role="group" aria-label="${key} display">${['cards','list'].map(mode=>button(mode==='cards'?'Cards':'List',`data-layout="${key}" data-mode="${mode}" aria-pressed="${S.layouts[key]===mode}"`)).join('')}</div>`;}
+  function collection(type,records){return `<div class="o-collection ${S.layouts[type]==='list'?'o-record-list':'o-grid'}" data-collection="${type}">${records.map(r=>recordCard(type,r)).join('')}</div>`;}
+  function commonsPanel(){
+    return `<section class="o-commons" aria-labelledby="commons-title"><div class="o-panel-head"><div><div class="o-kicker">THE LAB AT A GLANCE</div><h2 id="commons-title">Our ongoing questions</h2></div>${layoutToggle('commons')}</div><p class="o-sub">Across YZ Lab · project, research question, and current stage only. Read-only for everyone.</p>${S.commonsError?`<div class="o-note" role="status">${E(S.commonsError)}</div>`:S.commons.length?`<div class="o-collection ${S.layouts.commons==='list'?'o-record-list':'o-grid'}" data-collection="commons">${S.commons.map((p,i)=>`<article class="o-card o-summary-card"><div class="o-card-top"><span class="o-index">${String(i+1).padStart(2,'0')}</span>${badge(p.status)}</div><h3>${E(p.name)}</h3><p><span class="o-rq-label">RQ</span>${E(p.research_question||'Research question to be added.')}</p></article>`).join('')}</div>`:empty('No ongoing projects yet.')}</section>`;
   }
   function home(){
     const papers=activeRows('papers').filter(p=>p.current_holder_id===uid());
     const tasks=activeRows('tasks').filter(t=>!t.done&&(faculty()||t.owner_id===uid())).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
     const upcoming=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&!s.cancelled_at&&s.slot_date>=dateNow()).sort((a,b)=>(a.slot_date+time(startMinutes(a)/60)).localeCompare(b.slot_date+time(startMinutes(b)/60))).slice(0,2);
-    return heading('ORBIT LAB · YOUR RESEARCH, IN ORBIT.',`Welcome back, ${S.me.display_name}.`,'Good taste, shared context, research in motion.',button('+ New task','data-edit="tasks" data-id="new"',true))+
-      `<div class="o-stat-grid"><div class="o-stat"><strong>${activeRows('projects').length}</strong><span>Projects in orbit</span></div><div class="o-stat"><strong>${papers.length}</strong><span>Papers on your desk</span></div><div class="o-stat"><strong>${tasks.length}</strong><span>Open tasks</span></div></div><div class="o-layout"><div class="o-stack"><section><div class="o-panel-head"><h2>On your desk</h2>${button('All papers ↗','data-view="papers"')}</div><div class="o-stack">${papers.slice(0,4).map(p=>recordCard('papers',p)).join('')||empty('Nothing waiting on you right now.')}</div></section><section><div class="o-panel-head"><h2>In orbit</h2>${button('All projects ↗','data-view="projects"')}</div><div class="o-grid">${activeRows('projects').slice(0,2).map(p=>recordCard('projects',p)).join('')||empty('Your next research question starts here.')}</div></section></div><div class="o-stack"><section><div class="o-panel-head"><h2>Next meetings</h2></div>${upcoming.map(meetingCard).join('')||empty('No upcoming meetings.')}<div class="o-section-space">${button('Open calendar →','data-view="calendar"')}</div></section><section><div class="o-panel-head"><h2>Coming up</h2></div><div class="o-stack">${tasks.slice(0,2).map(t=>recordCard('tasks',t)).join('')||empty('All caught up.')}</div></section></div></div>`;
+    return heading('ORBIT / YZ LAB',`Welcome back, ${S.me.display_name}.`,'Good taste, shared context, research in motion.',button('+ New task','data-edit="tasks" data-id="new"',true))+
+      `<div class="o-stat-grid"><div class="o-stat"><strong>${S.commonsError?'—':S.commons.length}</strong><span>Ongoing projects across YZ Lab</span></div><div class="o-stat"><strong>${papers.length}</strong><span>Papers on your desk</span></div><div class="o-stat"><strong>${tasks.length}</strong><span>Open tasks</span></div></div>${commonsPanel()}<div class="o-layout o-section-space"><div class="o-stack"><section><div class="o-panel-head"><h2>On your desk</h2>${layoutToggle('papers')}${button('All papers ↗','data-view="papers"')}</div>${papers.length?collection('papers',papers.slice(0,4)):empty('Nothing waiting on you right now.')}</section><section><div class="o-panel-head"><h2>Your projects</h2>${layoutToggle('projects')}${button('All projects ↗','data-view="projects"')}</div>${activeRows('projects').length?collection('projects',activeRows('projects').slice(0,4)):empty('Your next research question starts here.')}</section></div><div class="o-stack"><section><div class="o-panel-head"><h2>Next on the calendar</h2></div>${upcoming.map(meetingCard).join('')||empty('No upcoming meetings or personal schedules.')}<div class="o-section-space">${button('Open calendar →','data-view="calendar"')}</div></section><section><div class="o-panel-head"><h2>Coming up</h2></div><div class="o-stack">${tasks.slice(0,2).map(t=>recordCard('tasks',t)).join('')||empty('All caught up.')}</div></section></div></div>`;
   }
   function meetingCard(s){return `<article class="o-card"><div class="o-card-top">${badge(s.cancelled_at?'Cancelled':duration(s)+' min',s.cancelled_at?'warm':'purple')}${s.series_id?badge(repeatNames[s.repeat_rule]||'Recurring','blue'):''}</div><h3>${E(s.topic||'Busy block')}</h3><div class="o-card-meta">${E(date(s.slot_date))} · ${time(startMinutes(s)/60)}–${time((startMinutes(s)+duration(s))/60)} · ${E(person(s.owner_id))}</div><p>${E(s.location)}${s.notes?' · '+E(s.notes):''}</p>${s.series_id?`<p>Series ends ${E(s.repeat_until)} · Changes apply to this occurrence only.</p>`:''}<div class="o-card-actions">${s.cancelled_at?(faculty()?button('Delete permanently',`data-delete="meetings" data-id="${s.id}"`):''):button('Manage','data-booking="'+s.id+'"')}</div></article>`;}
   function calendar(){
     const days=Array.from({length:5},(_,i)=>addDays(S.week,i));
     const records=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&(S.filter==='archived'?!!s.cancelled_at:!s.cancelled_at)&&days.includes(s.slot_date));
-    return heading('MAKE TIME FOR GOOD QUESTIONS.','Meeting Calendar','Monday–Friday · 09:00–17:00 · 30-minute slots · Asia/Shanghai')+
+    return heading('MAKE TIME FOR GOOD QUESTIONS.','Meeting Calendar','Monday–Friday · 09:00–17:00 · 30-minute slots · Asia/Shanghai',faculty()?button('+ Personal schedule','data-personal-schedule',true):'')+
       `<div class="o-toolbar">${button('←','data-week="-7" aria-label="Previous week"')}<strong>${date(days[0])}–${date(days[4])}, ${days[0].slice(0,4)}</strong>${button('→','data-week="7" aria-label="Next week"')}${button('This week','data-this-week')}${faculty()?button(S.busyMode?'Done editing availability':'Edit availability','data-busy-mode',S.busyMode):''}</div><div class="o-note">${S.busyMode?'Click an open slot to mark 30 minutes busy. Click a busy slot to reopen its entire block.':'Choose an available time. Meetings default to 30 minutes; 1 hour is also available. Other students’ meeting details stay private.'}</div><div class="o-week-grid">${days.map(d=>`<section class="o-day"><div class="o-day-title">${new Date(d+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'})}<span>${date(d)}</span></div>${Array.from({length:16},(_,i)=>{
       const m=9*60+i*30,occ=S.occupancy.find(x=>covers(x,d,m)),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&covers(x,d,m));
       const disabled=!!occ&&!(own&&(faculty()||own.owner_id===uid()));
@@ -201,9 +216,9 @@
     const old=id==='new'?null:row(type,id);if(id!=='new'&&!old)return;
     const r=old||{owner_id:uid(),visibility:type==='expenses'?'private':'members'},can=!old||editable(type,old),isFaculty=faculty();
     const owner=select('Owner','owner_id',people(),r.owner_id,'required '+(isFaculty?'':'disabled'));
-    const visibility=select('Visibility','visibility',[[type==='expenses'?'private':'members',type==='expenses'?'Submitter + faculty':'Project members'],['lab','Lab-wide']],r.visibility,(type==='expenses'||isFaculty)?'':'disabled');
+    const visibility=select(type==='projects'?'Detail visibility':'Visibility','visibility',[[type==='expenses'?'private':'members',type==='expenses'?'Submitter + faculty':'Project members'],['lab','Lab-wide']],r.visibility,(type==='expenses'||isFaculty)?'':'disabled');
     let fields='';
-    if(type==='projects')fields=input('Project name','name',r.name,'text','required maxlength="200"')+select('Current status','status',['Planning','Exploring','Experiment design','Data collection','Empirical analysis','Manuscript revision','Completed'],r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+visibility;
+    if(type==='projects')fields=input('Project name','name',r.name,'text','required maxlength="200"')+select('Current status','status',['Planning','Exploring','Experiment design','Data collection','Empirical analysis','Manuscript revision','Completed'],r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+visibility+'<p class="o-note wide">Ongoing project names, research questions, and stages appear in the read-only lab overview for all active members. Detail visibility does not hide these three summary fields. Completed or archived projects leave the overview.</p>';
     if(type==='papers'){
       const projects=S.rows.projects.filter(p=>(!p.archived_at&&(isFaculty||inProject(p.id)))||p.id===r.project_id);
       fields=input('Paper title','title',r.title,'text','required maxlength="300"')+owner+select('Project','project_id',[['','Independent paper'],...projects.map(p=>[p.id,p.name])],r.project_id,old&&!isFaculty?'disabled':'')+
@@ -214,13 +229,13 @@
     if(type==='signals')fields=input('Title','title',r.title,'text','required maxlength="300"')+select('Category','kind',['Paper pick','Interesting find','Tool','Small win'],r.kind||'Paper pick')+input('External link (optional)','link',r.link,'url')+textarea('Why it is worth sharing','notes',r.notes);
     modal(old?(can?'Edit ':'View ')+names[type]:`New ${names[type]}`,`<form data-form="record"><fieldset ${can?'':'disabled'}><div class="o-fields">${fields}</div></fieldset>${!can?'<p class="o-feedback">This record is read-only. Archived records must be restored before editing.</p>':''}${can?formActions():`<div class="o-dialog-actions">${button('Close','data-close')}</div>`}</form>`,{type,old});
   }
-  function bookingForm(id,d,h){
+  function bookingForm(id,d,h,personal=false){
     const old=id?row('calendar_slots',id):null;if(id&&!old)return;
     if(old?.cancelled_at)return;
     const students=S.rows.members.filter(m=>m.active&&m.role==='student');
-    if(faculty()&&!old&&!students.length){toast('Activate a student in Members before booking for them. You can still mark your busy hours.');return;}
-    const r=old||{slot_date:d,start_hour:Math.floor(h/60),start_minute:h%60,duration_minutes:30,owner_id:faculty()?students[0]?.id:uid(),location:'Office'};
-    modal(old?'Manage meeting':'Book a meeting',`<form data-form="booking"><div class="o-fields">${input('Discussion topic','topic',r.topic,'text','required maxlength="300"')}${select('Student','owner_id',faculty()?people():[[uid(),person(uid())]],r.owner_id,'required')}${input('Date','slot_date',r.slot_date,'date','required')}${select('Start time','start_minutes',Array.from({length:16},(_,i)=>[540+i*30,time(9+i/2)]),startMinutes(r))}${select('Duration','duration_minutes',[[30,'30 minutes'],[60,'1 hour']],duration(r))}${input('Location / format','location',r.location,'text','maxlength="200"')}${!old?select('Repeat','repeat_rule',[['none','Does not repeat'],...Object.entries(repeatNames)],'none')+input('Repeat until (required; within 1 year)','repeat_until','','date','disabled'):''}${textarea('Notes / meeting link','notes',r.notes)}</div><p class="o-feedback" id="booking-summary" aria-live="polite"></p>${!old?'<div id="repeat-preview" class="o-note" hidden></div>':r.series_id?`<p class="o-note">${E(repeatNames[r.repeat_rule])} · ends ${E(r.repeat_until)}. Edits affect this occurrence only. To change the series, cancel its future occurrences and create a new series.</p>`:''}<p class="o-feedback">Monday–Friday · 09:00–17:00 · Asia/Shanghai</p>${formActions(old?'Save / reschedule':'Book meeting')}${old?`<div class="o-section-space o-card-actions">${button('Cancel this meeting',`data-cancel="${old.id}"`)}${old.series_id?button('Cancel remaining series',`data-cancel-series="${old.id}"`):''}</div>`:''}</form>`,{old});
+    const r=old||{slot_date:d,start_hour:Math.floor(h/60),start_minute:h%60,duration_minutes:30,owner_id:faculty()&&!personal?(students[0]?.id||uid()):uid(),location:'Office'};
+    const owners=faculty()?S.rows.members.filter(m=>m.active||m.id===r.owner_id).map(m=>[m.id,m.role==='faculty'?`Personal schedule · ${m.display_name} (no students)`:m.display_name]):[[uid(),person(uid())]];
+    modal(old?'Manage meeting / schedule':personal?'Personal schedule':'Book a meeting',`<form data-form="booking"><div class="o-fields">${input('Discussion topic / schedule title','topic',r.topic,'text','required maxlength="300"')}${select('Schedule for','owner_id',owners,r.owner_id,'required')}${input('Date','slot_date',r.slot_date,'date','required')}${select('Start time','start_minutes',Array.from({length:16},(_,i)=>[540+i*30,time(9+i/2)]),startMinutes(r))}${select('Duration','duration_minutes',[[30,'30 minutes'],[60,'1 hour']],duration(r))}${input('Location / format','location',r.location,'text','maxlength="200"')}${!old?select('Repeat','repeat_rule',[['none','Does not repeat'],...Object.entries(repeatNames)],personal?'weekly':'none')+input('Repeat until (required; within 1 year)','repeat_until','','date','disabled'):''}${textarea('Notes / meeting link','notes',r.notes)}</div><p class="o-feedback" id="booking-summary" aria-live="polite"></p>${!old?'<div id="repeat-preview" class="o-note" hidden></div>':r.series_id?`<p class="o-note">${E(repeatNames[r.repeat_rule])} · ends ${E(r.repeat_until)}. Edits affect this occurrence only. To change the series, cancel its future occurrences and create a new series.</p>`:''}${faculty()?'<p class="o-note">Personal schedules do not need a student. Students see only occupied time, never the title, location, or notes. These slots are not bookable.</p>':''}<p class="o-feedback">Monday–Friday · 09:00–17:00 · Asia/Shanghai</p>${formActions(old?'Save / reschedule':personal?'Save schedule':'Book meeting')}${old?`<div class="o-section-space o-card-actions">${button('Cancel this meeting',`data-cancel="${old.id}"`)}${old.series_id?button('Cancel remaining series',`data-cancel-series="${old.id}"`):''}</div>`:''}</form>`,{old});
     const booking=$('o-dialog-body').querySelector('form');
     if(old?.series_id)booking.elements.slot_date.max=old.repeat_until;
     bookingSummary(booking);
@@ -289,6 +304,8 @@
     if(!S.ready)return;
     if(b.dataset.view){S.view=b.dataset.view;S.filter='active';S.busyMode=false;render();return;}
     if(b.dataset.filter){S.filter=b.dataset.filter;render();return;}
+    if(b.dataset.layout&&Object.hasOwn(S.layouts,b.dataset.layout)&&['cards','list'].includes(b.dataset.mode)){const key=b.dataset.layout,mode=b.dataset.mode;S.layouts[key]=mode;render();root.querySelector(`[data-layout="${key}"][data-mode="${mode}"]`)?.focus();return;}
+    if(b.hasAttribute('data-personal-schedule')&&faculty())return bookingForm(null,S.week,540,true);
     if(b.hasAttribute('data-refresh'))return loadWorkspace();
     if(b.dataset.edit)return recordForm(b.dataset.edit,b.dataset.id);
     if(b.dataset.projectMembers)return projectMembers(b.dataset.projectMembers);
@@ -350,7 +367,7 @@
   $('auth-signout').addEventListener('click',()=>signOut());
   $('auth-retry').addEventListener('click',()=>loadWorkspace());
   // Static code-native stars; no image requests or tracking pixels.
-  document.querySelectorAll('.o-main').forEach(main=>{const sky=document.createElement('div');sky.className='o-sky';sky.setAttribute('aria-hidden','true');for(let i=0;i<4;i++){const ring=document.createElement('span');ring.className='o-wave';sky.appendChild(ring);}let seed=1289;const rand=()=>((seed=seed*16807%2147483647)-1)/2147483646;for(let i=0;i<210;i++){const star=document.createElement('span');star.className='o-star'+(i%31===0?' bright':'');const size=i%31===0?2.2:.7+rand()*1.3;star.style.cssText=`left:${rand()*100}%;top:${rand()*100}%;width:${size}px;height:${size}px;--star-opacity:${.2+rand()*.7}`;sky.appendChild(star);}main.prepend(sky);});
+  document.querySelectorAll('.o-main').forEach(main=>{const sky=document.createElement('div');sky.className='o-sky';sky.setAttribute('aria-hidden','true');const cover=main.classList.contains('o-auth');let seed=1289;const rand=()=>((seed=seed*16807%2147483647)-1)/2147483646;for(let i=0;i<(cover?620:210);i++){const star=document.createElement('span');star.className='o-star'+(i%47===0?' bright':'');const size=i%47===0?2.2:.6+rand()*1.4;const x=rand()*100,y=cover&&i>210?(x*.72+(rand()-.5)*44+100)%100:rand()*100;star.style.cssText=`left:${x}%;top:${y}%;width:${size}px;height:${size}px;--star-opacity:${.25+rand()*.65}`;sky.appendChild(star);}main.prepend(sky);});
   try{
     if(!window.supabase?.createClient)throw new Error('The sign-in library could not load. Check access to cdn.jsdelivr.net and reload this page.');
     // Sessions persist within this tab only. No passwords or research records

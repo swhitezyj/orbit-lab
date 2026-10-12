@@ -333,3 +333,163 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 #orbit-lab[data-theme=light] .o-error,#orbit-lab[data-theme=light] .o-danger,#orbit-lab[data-theme=light] [data-danger]{color:#a02e47;border-color:#bf8392}
 #orbit-lab[data-theme=light] .o-error{background:#fff0f3}
 #orbit-lab[data-theme=light] .o-danger-box{background:#fff2f4;color:#8e2940;border-color:#cf9aa6}
+
+/* YZ Lab / Observatory. Code-native sky inspired by the supplied palette;
+   no stock image or watermark is reused. Official Guanghua asset unaltered. */
+/* Self-hosted, unmodified OFL fonts; local fallbacks cover other scripts. */
+@font-face{font-family:"ORBIT Cormorant";font-style:normal;font-weight:400 700;font-display:swap;src:url("./cormorant-latin.woff2") format("woff2")}
+@font-face{font-family:"ORBIT Cormorant";font-style:italic;font-weight:400 700;font-display:swap;src:url("./cormorant-italic-latin.woff2") format("woff2")}
+@font-face{font-family:"ORBIT Source Sans";font-style:normal;font-weight:400 700;font-display:swap;src:url("./source-sans-3-latin.woff2") format("woff2")}
+@font-face{font-family:"ORBIT Italiana";font-style:normal;font-weight:400;font-display:swap;src:url("./italiana-latin.woff2") format("woff2")}
+@font-face{font-family:"ORBIT Hand";font-style:normal;font-weight:400 700;font-display:swap;src:url("./caveat-latin.woff2") format("woff2")}
+#orbit-lab{--o-bg:#202440;--o-sidebar:#171b32;--o-panel:#2c304b;--o-panel2:#3c405f;--o-border:#535d7a;--o-text:#faf1f4;--o-muted:#c7cbe0;--o-purple:#c9c3ef;--o-blue:#d6c7eb;--o-warm:#eed7c5;--o-green:#b8d5c7;--o-serif:"Baskerville","Palatino Linotype","Book Antiqua",Georgia,serif;font-family:"Avenir Next","Segoe UI","Helvetica Neue",Arial,sans-serif}
+#orbit-lab .o-main{background:radial-gradient(ellipse at 96% 0%,#777db055,transparent 48%),radial-gradient(ellipse at 15% 30%,#8482b52b,transparent 44%),#202440}
+#orbit-lab .o-wave{display:none}
+#orbit-lab .o-star{box-shadow:none;background:#f7f2de}
+#orbit-lab .o-star.bright{background:#fff6df;box-shadow:0 0 8px #eddfbf66}
+#orbit-lab .o-shell .o-sky{opacity:.38}
+#orbit-lab .o-auth{background:linear-gradient(90deg,#19214875,#25285155 43%,transparent 72%),radial-gradient(ellipse at 90% 86%,#f9eee2 0%,#dec3d7 15%,#a4a1c8 35%,transparent 65%),radial-gradient(ellipse at 20% 55%,#63639b,transparent 55%),linear-gradient(150deg,#18214b,#444c81 46%,#8d84b2);align-items:center}
+#orbit-lab .o-auth .o-sky{opacity:.9}
+#orbit-lab .o-auth-layout{width:min(1200px,100%);gap:clamp(36px,7vw,110px);grid-template-columns:1.4fr 1fr}
+#orbit-lab .o-auth-story{color:#fff8f1;text-shadow:0 2px 16px #31144240;min-width:0}
+#orbit-lab .o-wordmark{font-family:var(--o-serif);font-size:76px;line-height:1;letter-spacing:.08em;margin-bottom:18px;font-weight:400}
+#orbit-lab .o-wordmark small{font-family:var(--o-serif);display:block;font-size:23px;letter-spacing:.015em;font-style:italic;margin-top:16px}
+#orbit-lab .o-auth-full-name{font-size:17px;line-height:1.7;letter-spacing:.015em;margin-bottom:50px;color:#f5e7f6}
+#orbit-lab .o-auth h1{font-family:var(--o-serif);font-size:clamp(38px,4.2vw,58px);letter-spacing:-.035em;line-height:1.12;margin:0 0 24px;color:#fff8e9;text-shadow:none}
+#orbit-lab .o-auth h1 em{color:#ffe4ed}
+#orbit-lab .o-auth-story>p{color:#f0edfa;font-size:16px}
+#orbit-lab .o-auth-card{background:#252942f5;border:1px solid #9a7eaa;border-radius:4px;box-shadow:0 18px 60px #321c443b;backdrop-filter:none;padding:36px;align-self:center}
+#orbit-lab .o-auth-card h2{font-family:var(--o-serif);font-size:36px;font-weight:400}
+#orbit-lab .o-affiliation{margin-top:34px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+#orbit-lab .o-affiliation img,#orbit-lab .o-side-institution img{display:block;width:220px;height:auto;max-width:100%;background:#282c46;padding:10px 12px;box-sizing:content-box;border-radius:2px}
+#orbit-lab .o-affiliation span{font-size:14px;line-height:1.7;color:#f6f1e6}
+#orbit-lab .o-sky-caption{margin-top:26px;font:italic 15px var(--o-serif);letter-spacing:.03em;color:#fff3dd}
+#orbit-lab .o-side-institution{padding:8px 6px 0;margin-top:0;order:-1}
+#orbit-lab .o-side-institution img{width:calc(100% - 24px)}
+#orbit-lab .o-side-institution span{display:block;font-size:12px;line-height:1.7;color:var(--o-muted);margin-top:10px}
+#orbit-lab .o-side-foot{margin-top:auto}
+#orbit-lab .o-brand{gap:12px;order:-2}
+#orbit-lab button{transition:border-color .15s}
+#orbit-lab .o-brand-mark{border-color:#9b7380;color:#dfc9bf;border-radius:0;border-width:0 0 1px}
+#orbit-lab .o-brand-name{font:30px/1 var(--o-serif);letter-spacing:.08em}
+#orbit-lab .o-brand-sub{font:italic 16px/1.4 var(--o-serif);letter-spacing:0;color:var(--o-muted)}
+#orbit-lab .o-heading h1{font-family:var(--o-serif);letter-spacing:-.03em;text-shadow:none}
+#orbit-lab h2{font-family:var(--o-serif);font-size:24px;font-weight:400}
+#orbit-lab .o-card h3{font-family:var(--o-serif);font-size:23px;letter-spacing:-.015em;font-weight:400}
+#orbit-lab .o-top{padding-right:28px;background:#191e3855}
+#orbit-lab .o-full-name{font-family:var(--o-serif);font-size:18px;color:var(--o-text)}
+#orbit-lab .o-nav button{border-radius:3px}
+#orbit-lab .o-nav button[aria-current=page]{background:#3b405e;color:#fff0f5;box-shadow:inset 3px 0 #dfa3c4}
+#orbit-lab .o-side-label,#orbit-lab .o-footer{color:var(--o-muted)}
+#orbit-lab .o-kicker{color:var(--o-muted);letter-spacing:.12em;font-size:12px}
+#orbit-lab .o-card,#orbit-lab .o-stat{border-radius:3px;background:#2c304bf5;box-shadow:none}
+#orbit-lab .o-stat{border:0;border-top:1px solid #a88189;padding:16px 0;background:transparent}
+#orbit-lab .o-stat strong{color:var(--o-text);font-family:var(--o-serif)}
+#orbit-lab .o-btn{border-radius:3px;background:#3e4261;box-shadow:none}
+#orbit-lab .o-btn.primary{background:#981e32;border-color:#cf8290;box-shadow:none;color:#fff}
+#orbit-lab .o-btn:hover{border-color:#d9b8df}
+#orbit-lab .o-badge{border-radius:2px;white-space:normal}
+#orbit-lab .o-badge.purple{color:#edd4fa;background:#464365}
+#orbit-lab .o-badge.blue{color:#f6d9e9;background:#4c425c}
+#orbit-lab .o-badge.green{color:#c4e4d6;background:#29483e}
+#orbit-lab .o-badge.warm{color:#f5dfb6;background:#493e35}
+#orbit-lab .o-note{background:#373c5a;border-color:#a17caf;color:#e2cfe9;border-radius:2px}
+#orbit-lab .o-avatar{background:#474967;border-color:#aa80ab;color:#f5e8f7}
+#orbit-lab .o-dialog{border-radius:4px;background:#2c304b;border-color:#a17faa}
+#orbit-lab .o-field input,#orbit-lab .o-field select,#orbit-lab .o-field textarea{border-radius:3px;background:#20243c;border-color:#8e719a;color:var(--o-text)}
+#orbit-lab .o-slot{border-radius:2px;background:#3c4165;color:#efd7f3;border-color:#846191}
+#orbit-lab .o-slot.busy{background:#342b3a;color:#d4c8db;border-color:#76647d}
+#orbit-lab .o-slot.booked{background:#243f3a;color:#c4e4d6;border-color:#4d7167}
+#orbit-lab .o-view-toolbar{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap;margin:18px 0}
+#orbit-lab .o-view-toolbar .o-filters{margin:0}
+#orbit-lab .o-layout-toggle{display:flex;gap:0;flex-shrink:0}
+#orbit-lab .o-layout-toggle .o-btn{border-radius:0;padding:7px 12px;min-height:40px;font-size:14px;background:transparent}
+#orbit-lab .o-layout-toggle [aria-pressed=true],#orbit-lab .o-filters [aria-pressed=true]{background:#505879;color:#fff0f8;border-color:#b991c2}
+#orbit-lab .o-commons{padding:12px 0 28px;border-bottom:1px solid var(--o-border)}
+#orbit-lab .o-commons>.o-sub{margin:0 0 22px}
+#orbit-lab .o-index{font:italic 22px var(--o-serif);color:var(--o-muted)}
+#orbit-lab .o-rq-label{font-size:12px;letter-spacing:.08em;display:block;color:var(--o-purple);margin-bottom:4px}
+#orbit-lab .o-record-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--o-border)}
+#orbit-lab .o-record-list>.o-card{border:0;border-bottom:1px solid var(--o-border);border-radius:0;padding:20px 16px;gap:9px;display:grid;grid-template-columns:minmax(0,1fr) auto}
+#orbit-lab .o-record-list>.o-card>h3{grid-column:1;grid-row:1}
+#orbit-lab .o-record-list>.o-card>.o-card-top{grid-column:2;grid-row:1;justify-content:flex-end}
+#orbit-lab .o-record-list>.o-card>:not(h3):not(.o-card-top){grid-column:1/-1}
+#orbit-lab .o-record-list .o-card-actions{padding-top:4px}
+#orbit-lab .o-record-list .o-index{display:none}
+#orbit-lab[data-theme=light]{--o-bg:#fff;--o-sidebar:#f3f3f9;--o-panel:#fff;--o-panel2:#f3eaf4;--o-border:#dacadd;--o-text:#303858;--o-muted:#565d7c;--o-purple:#70417c;--o-blue:#854569;--o-warm:#785b38;--o-green:#315c4a}
+#orbit-lab[data-theme=light] .o-main{background:radial-gradient(ellipse at 95% 0%,#eed0e45c,transparent 50%),radial-gradient(ellipse at 15% 30%,#d8c4ef26,transparent 44%),#fff}
+#orbit-lab[data-theme=light] .o-auth{background:radial-gradient(ellipse at 84% 85%,#fff4e8,transparent 52%),radial-gradient(ellipse at 87% 25%,#e6d4e9,transparent 60%),radial-gradient(ellipse at 13% 5%,#cbd1ec,transparent 66%),#e8e5f0}
+#orbit-lab[data-theme=light] .o-auth-story,#orbit-lab[data-theme=light] .o-auth h1,#orbit-lab[data-theme=light] .o-auth h1 em{color:#3f416c;text-shadow:none}
+#orbit-lab[data-theme=light] .o-auth-full-name,#orbit-lab[data-theme=light] .o-auth-story>p,#orbit-lab[data-theme=light] .o-affiliation span,#orbit-lab[data-theme=light] .o-sky-caption{color:#535c7b}
+#orbit-lab[data-theme=light] .o-star{background:#9c73ac;box-shadow:none}
+#orbit-lab[data-theme=light] .o-card,#orbit-lab[data-theme=light] .o-auth-card{background:#fffffff5;box-shadow:none}
+#orbit-lab[data-theme=light] .o-stat{background:transparent;box-shadow:none;border-color:#99727b}
+#orbit-lab[data-theme=light] .o-top{background:#ffffff99}
+#orbit-lab[data-theme=light] .o-btn{background:#f4eaf2;box-shadow:none}
+#orbit-lab[data-theme=light] .o-btn.primary{background:#981e32;color:#fff;border-color:#981e32;box-shadow:none}
+#orbit-lab[data-theme=light] .o-nav button[aria-current=page]{background:#e6e4f2;color:#45466d;box-shadow:inset 3px 0 #8976a8}
+#orbit-lab[data-theme=light] .o-avatar{background:#f0e2ef;color:#663b70;border-color:#c8a9ce}
+#orbit-lab[data-theme=light] .o-badge.purple{color:#653675;background:#f0e2f5}
+#orbit-lab[data-theme=light] .o-badge.blue{color:#7f3d61;background:#f6e3ed}
+#orbit-lab[data-theme=light] .o-note{background:#f3eaf5;color:#674874;border-color:#b08fba}
+#orbit-lab[data-theme=light] .o-layout-toggle [aria-pressed=true],#orbit-lab[data-theme=light] .o-filters [aria-pressed=true]{color:#623b70;background:#ecd9ef;border-color:#b593c0}
+#orbit-lab[data-theme=light] .o-slot{background:#f2e4f5;color:#684075;border-color:#d2b7dd}
+#orbit-lab[data-theme=light] .o-field input,#orbit-lab[data-theme=light] .o-field select,#orbit-lab[data-theme=light] .o-field textarea{background:#fffbff;color:var(--o-text);border-color:#bd9dc8}
+@media(max-width:1050px){#orbit-lab .o-auth-layout{gap:34px}#orbit-lab .o-wordmark{font-size:62px}#orbit-lab .o-auth-card{padding:28px}}
+@media(max-width:760px){#orbit-lab .o-auth-layout{grid-template-columns:1fr;max-width:540px}#orbit-lab .o-auth-full-name{margin-bottom:30px}#orbit-lab .o-auth-story>p{display:block}#orbit-lab .o-auth h1{font-size:40px}#orbit-lab .o-wordmark{font-size:64px}#orbit-lab .o-auth-card{width:100%}#orbit-lab .o-side-institution{display:none}#orbit-lab .o-record-list>.o-card{display:flex}#orbit-lab .o-record-list>.o-card>.o-card-top{justify-content:flex-start}#orbit-lab .o-affiliation img{width:190px}#orbit-lab .o-top{padding-right:20px}}
+#orbit-lab .o-fields>.wide{grid-column:1/-1}
+@media(max-width:760px){#orbit-lab .o-side-institution{display:block}}
+@media(max-width:560px){#orbit-lab .o-side-institution{display:flex;align-items:center;gap:14px;padding:0 4px}#orbit-lab .o-side-institution img{width:124px;padding:8px;flex-shrink:0}#orbit-lab .o-side-institution span{margin-top:0;font-size:11px}}
+
+/* Editorial typography: expressive display, restrained operational text. */
+#orbit-lab{--o-serif:"ORBIT Cormorant","Baskerville",Georgia,serif;font-family:"ORBIT Source Sans","Segoe UI","Helvetica Neue",Arial,sans-serif;font-size:17px}
+#orbit-lab .o-wordmark{font-size:96px;font-weight:500;letter-spacing:.085em;line-height:.95}
+#orbit-lab .o-wordmark small{font-size:28px;font-weight:500;letter-spacing:.01em;line-height:1.25}
+#orbit-lab .o-auth h1{font-size:clamp(46px,4.65vw,67px);font-weight:500;line-height:1.05;letter-spacing:-.025em}
+#orbit-lab .o-auth h1 em{font-weight:500;letter-spacing:-.035em}
+#orbit-lab .o-auth-full-name{font-size:18px;line-height:1.6;letter-spacing:.035em}
+#orbit-lab .o-auth-card h2{font-size:42px;font-weight:500;line-height:1.15}
+#orbit-lab .o-brand-name{font-size:34px;font-weight:600;letter-spacing:.065em}
+#orbit-lab .o-brand-sub{font-size:20px;font-weight:500;line-height:1.2}
+#orbit-lab .o-heading h1{font-size:46px;font-weight:500;line-height:1.15;letter-spacing:-.02em}
+#orbit-lab h2{font-weight:600;font-size:27px;line-height:1.2}
+#orbit-lab .o-card h3{font-size:26px;font-weight:600;line-height:1.2;letter-spacing:-.01em}
+#orbit-lab .o-full-name{font-size:21px;font-weight:600;line-height:1.35}
+#orbit-lab .o-stat strong{font-size:46px;font-weight:500;line-height:1.1;margin-bottom:8px}
+#orbit-lab .o-kicker,#orbit-lab .o-side-label{font-weight:600;letter-spacing:.16em}
+#orbit-lab .o-auth-story>p,#orbit-lab #auth-intro{font-size:17px}
+#orbit-lab .o-sky-caption{font-size:19px;font-weight:500}
+#orbit-lab .o-card-meta,#orbit-lab .o-slot,#orbit-lab input[type=number]{font-variant-numeric:tabular-nums}
+@media(max-width:760px){#orbit-lab .o-wordmark{font-size:76px}#orbit-lab .o-auth h1{font-size:48px}#orbit-lab .o-heading h1{font-size:38px}}
+@media(max-width:380px){#orbit-lab .o-wordmark{font-size:64px}#orbit-lab .o-auth h1{font-size:42px}#orbit-lab .o-auth-full-name{font-size:17px}}
+
+/* Lettering is reserved for the identity and the three-line lab motto. */
+#orbit-lab .o-wordmark,#orbit-lab .o-brand-name{font-family:"ORBIT Italiana",var(--o-serif);font-weight:400;font-style:normal;font-synthesis:none;letter-spacing:.12em}
+#orbit-lab .o-wordmark{font-size:100px;line-height:1.12}
+#orbit-lab .o-wordmark small,#orbit-lab .o-brand-sub{font-family:"ORBIT Hand",var(--o-serif);font-weight:500;font-style:normal;font-synthesis:none;letter-spacing:0}
+#orbit-lab .o-wordmark small{font-size:37px;line-height:1.3;margin-top:5px}
+#orbit-lab .o-brand-sub{font-size:27px;line-height:1.25}
+#orbit-lab .o-auth h1,#orbit-lab .o-auth h1 em{font-family:"ORBIT Hand",var(--o-serif);font-weight:500;font-style:normal;font-synthesis:none;letter-spacing:0}
+#orbit-lab .o-auth h1{font-size:clamp(54px,4.8vw,69px);line-height:1.2;padding:4px 12px 4px 0}
+#orbit-lab .o-auth h1 em{color:#f3e0ed}
+#orbit-lab .o-heading:has(+.o-stat-grid) .o-sub{font-family:"ORBIT Hand",var(--o-serif);font-size:32px;font-weight:500;line-height:1.5;letter-spacing:0}
+#orbit-lab[data-theme=light] .o-auth h1 em{color:#615883}
+@media(max-width:1050px){#orbit-lab .o-auth h1{font-size:56px}#orbit-lab .o-wordmark{font-size:84px}}
+@media(max-width:760px){#orbit-lab .o-auth h1{font-size:57px}#orbit-lab .o-wordmark{font-size:80px}}
+@media(max-width:380px){#orbit-lab .o-auth h1{font-size:46px}#orbit-lab .o-wordmark{font-size:64px}#orbit-lab .o-wordmark small{font-size:32px}}
+
+/* Readable handwriting, a red institutional accent, and a larger working scale. */
+#orbit-lab .o-affiliation img,#orbit-lab .o-side-institution img{background:#fff}
+#orbit-lab .o-btn.primary:hover{background:#80172a;border-color:#e4a6b0}
+#orbit-lab .o-brand-sub{font-size:30px}
+#orbit-lab .o-auth-card h2{font-size:46px}
+#orbit-lab .o-auth-story>p,#orbit-lab #auth-intro{font-size:18px}
+#orbit-lab .o-nav button,#orbit-lab .o-btn,#orbit-lab .o-btn.small,#orbit-lab .o-text-btn,#orbit-lab .o-layout-toggle .o-btn{font-size:16px}
+#orbit-lab #auth-submit{font-size:18px;min-height:52px}
+#orbit-lab label.o-field{font-size:16px}
+#orbit-lab .o-field input,#orbit-lab .o-field select,#orbit-lab .o-field textarea{font-size:17px}
+#orbit-lab .o-card p,#orbit-lab .o-handoff,#orbit-lab .o-sub{font-size:17px}
+#orbit-lab .o-card-meta,#orbit-lab .o-auth-fine,#orbit-lab .o-affiliation span{font-size:15px}
+#orbit-lab .o-kicker,#orbit-lab .o-side-label,#orbit-lab .o-rq-label,#orbit-lab .o-muted,#orbit-lab .o-footer,#orbit-lab .o-side-institution span{font-size:14px}
+#orbit-lab .o-badge,#orbit-lab .o-week-grid .o-slot small{font-size:14px}
+@media(max-width:560px){#orbit-lab .o-side-institution{flex-wrap:wrap}#orbit-lab .o-side-institution span{font-size:14px}}
