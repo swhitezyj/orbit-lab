@@ -40,6 +40,7 @@
   const safeURL=value=>{try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
   const external=url=>safeURL(url)?`<a class="o-link" href="${E(safeURL(url))}" target="_blank" rel="noopener noreferrer">Open external link ↗</a>`:'';
   const person=id=>S.rows.members.find(m=>m.id===id)?.display_name||'Unassigned';
+  const authorNames=r=>[...(r.author_member_ids||[]).map(person),...(r.external_authors||[])];
   const project=id=>S.rows.projects.find(p=>p.id===id);
   const inProject=id=>S.rows.project_members.some(m=>m.project_id===id&&m.member_id===uid());
   const taskParticipant=r=>(r.participant_ids||[]).includes(uid());
@@ -65,6 +66,9 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(['42703','PGRST204'].includes(error?.code)&&/author_member_ids|external_authors/.test(error?.message||''))return 'Paper authors need database update 010. Ask your faculty administrator to apply it, then refresh.';
+    if(error?.code==='PGRST202'&&error?.message?.includes('orbit_save_project'))return 'The project editor needs database update 010. Ask your faculty administrator to apply it, then refresh. No project changes were saved.';
+    if(error?.code==='40001')return 'This project or its members changed. Close this dialog, refresh, and reopen it before saving.';
     if(['42703','PGRST204'].includes(error?.code)&&error?.message?.includes('participant_ids'))return 'Task participants need database update 009. Ask your faculty administrator to apply it, then refresh.';
     if(['23505','23P01'].includes(error?.code))return 'That time overlaps an existing meeting or busy block. Refresh the calendar and choose another time.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_availability_v2'))return 'The calendar database update is not installed yet. Ask your faculty administrator to apply migration 005, then retry.';
@@ -160,10 +164,11 @@
     let meta='',body='',state=r.status||r.kind||r.category||'';
     if(type==='projects'){
       meta=S.rows.project_members.filter(m=>m.project_id===r.id).map(m=>person(m.member_id)).join(', ')||'Faculty only';
-      body=`<p>${E(r.research_question||'Research question not set yet.')}</p>`;
+      const papers=activeRows('papers').filter(p=>p.project_id===r.id);
+      body=`<p>${E(r.research_question||'Research question not set yet.')}</p><div class="o-project-papers"><span class="o-rq-label">Active papers you can access · ${papers.length}</span>${papers.length?papers.map(p=>`<div class="o-linked-paper">${button(E(p.title),`data-edit="papers" data-id="${p.id}"`)}<span class="o-muted">${E(p.status)} · Authors: ${E(authorNames(p).join(' · ')||'Not set')}</span></div>`).join(''):'<p>No accessible active papers linked yet.</p>'}${!r.archived_at&&(faculty()||inProject(r.id))?button('+ Add paper',`data-add-project-paper="${r.id}"`):''}</div>`;
     }else if(type==='papers'){
       meta=`Owner: ${person(r.owner_id)} · ${date(r.target_date)}`;
-      body=`<p>${E(project(r.project_id)?.name||'Independent paper')}</p><div class="o-handoff">With <strong>${E(r.external_holder||person(r.current_holder_id))}</strong> → Next <strong>${E(person(r.next_person_id))}</strong></div><p>${E(r.next_action)}</p>${external(r.link)}`;
+      body=`<p>${E(project(r.project_id)?.name||'Independent paper')}</p><p><span class="o-rq-label">Authors</span>${E(authorNames(r).join(' · ')||'Authors not set yet.')}</p><div class="o-handoff">With <strong>${E(r.external_holder||person(r.current_holder_id))}</strong> → Next <strong>${E(person(r.next_person_id))}</strong></div><p>${E(r.next_action)}</p>${external(r.link)}`;
     }else if(type==='expenses'){
       meta=`${person(r.owner_id)} · ${r.receipt_status}`;
       body=`<h3>${E(r.currency)} ${Number(r.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</h3><p>${E(r.notes)}</p>${r.input_tokens!==null||r.output_tokens!==null?`<p>Tokens · Input ${E(r.input_tokens??'—')} / Output ${E(r.output_tokens??'—')}</p>`:''}${external(r.receipt_link)}`;
@@ -214,17 +219,27 @@
     $('user-name').textContent=S.me.display_name;$('user-avatar').textContent=S.me.display_name.slice(0,2).toUpperCase();$('user-role').textContent=faculty()?'Faculty · Full access':'Student · Member access';$('crumb').textContent=names[S.view];
     $('o-content').innerHTML=(S.view==='home'?home():S.view==='calendar'?calendar():S.view==='members'?members():listView(S.view))+`<div class="o-footer"><span>Open Research on Behavior, Intelligence &amp; Technology</span><span>Links &amp; handoffs. No uploads.</span></div>`;
   }
-  function recordForm(type,id){
+  function recordForm(type,id,defaults={}){
     if(!['projects','papers','expenses','tasks','signals'].includes(type))return;
     const old=id==='new'?null:row(type,id);if(id!=='new'&&!old)return;
-    const r=old||{owner_id:uid(),visibility:type==='expenses'?'private':'members'},can=!old||editable(type,old),isFaculty=faculty();
+    const r=old||{owner_id:uid(),visibility:type==='expenses'?'private':'members',...defaults},can=!old||editable(type,old),isFaculty=faculty();
+    const projectMemberIds=type==='projects'?(old?S.rows.project_members.filter(m=>m.project_id===old.id).map(m=>m.member_id):[uid()]):[];
     const owner=select('Owner','owner_id',people(),r.owner_id,'required '+(isFaculty?'':'disabled'));
     const visibility=select(type==='projects'?'Detail visibility':'Visibility','visibility',[[type==='expenses'?'private':'members',type==='expenses'?'Submitter + faculty':'Project members'],['lab','Lab-wide']],r.visibility,(type==='expenses'||isFaculty)?'':'disabled');
     let fields='';
-    if(type==='projects')fields=input('Project name','name',r.name,'text','required maxlength="200"')+select('Current status','status',['Planning','Exploring','Experiment design','Data collection','Empirical analysis','Manuscript revision','Completed'],r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+visibility+'<p class="o-note wide">Ongoing project names, active member names, research questions, and stages appear in the read-only lab overview for all active members. Detail visibility does not hide these four summary fields. Completed or archived projects leave the overview.</p>';
+    if(type==='projects'){
+      const statuses=['Planning','Exploring','Experiment design','Data collection','Empirical analysis','Manuscript revision','Paper completed','Submitted','Completed'];
+      if(r.status&&!statuses.includes(r.status))statuses.push(r.status);
+      const candidates=S.rows.members.filter(m=>m.active||projectMemberIds.includes(m.id));
+      fields=input('Project name','name',r.name,'text','required maxlength="200"')+select('Current status','status',statuses,r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+visibility+
+        (isFaculty?`<fieldset class="o-task-assignees wide"><legend>Project members</legend><div class="o-members-list">${candidates.map(m=>`<label class="o-member-check"><input type="checkbox" name="project_member_ids" value="${E(m.id)}" ${projectMemberIds.includes(m.id)?'checked':''}>${E(m.display_name)} · ${E(m.role)}${m.active?'':' · inactive'}</label>`).join('')}</div></fieldset><p class="o-note wide">Member changes are saved with the project when you click Save changes. Faculty always retains access.</p>`:`<p class="o-note wide">Project members: ${projectMemberIds.map(id=>E(person(id))).join(' · ')||'None assigned'}. Only faculty can change membership.</p>`)+
+        '<p class="o-note wide">Paper completed means the manuscript is written; Submitted means it has been sent for review. Both stay in the lab overview. Completed closes the whole project and removes it from the overview. Project and paper statuses are updated separately.</p><p class="o-note wide">Ongoing project names, active member names, research questions, and stages appear in the read-only lab overview for all active members. Detail visibility does not hide these four summary fields. Completed or archived projects leave the overview.</p>';
+    }
     if(type==='papers'){
       const projects=S.rows.projects.filter(p=>(!p.archived_at&&(isFaculty||inProject(p.id)))||p.id===r.project_id);
+      const authors=S.rows.members.filter(m=>m.active||(r.author_member_ids||[]).includes(m.id));
       fields=input('Paper title','title',r.title,'text','required maxlength="300"')+owner+select('Project','project_id',[['','Independent paper'],...projects.map(p=>[p.id,p.name])],r.project_id,old&&!isFaculty?'disabled':'')+
+        `<fieldset class="o-task-assignees wide"><legend>Authors · lab members</legend><div class="o-members-list">${authors.map(m=>`<label class="o-member-check"><input type="checkbox" name="author_member_ids" value="${E(m.id)}" ${(r.author_member_ids||[]).includes(m.id)?'checked':''}>${E(m.display_name)}${m.active?'':' · inactive'}</label>`).join('')}</div></fieldset>`+textarea('External authors (one name per line)','external_authors',(r.external_authors||[]).join('\n'))+'<p class="o-note wide">Each paper has its own authors. Owner is the person responsible for the paper. This list records names, not publication author order, and does not grant access or create accounts.</p>'+
         select('Status','status',['Draft','Revision','Ready to submit','Submitted'],r.status||'Draft')+select('Currently with','holder',[...people(true),['journal','Journal']],r.external_holder?'journal':old?(r.current_holder_id||''):uid())+select('Next person','next_person_id',people(true),r.next_person_id)+input('Target deadline','target_date',r.target_date,'date')+visibility+select('Material handoff','handoff',['Link pending','Link provided','Shared offline'],r.handoff||'Link pending')+input('Document link (optional)','link',r.link,'url','placeholder="https://..."')+textarea('Next action','next_action',r.next_action);
     }
     if(type==='expenses')fields=input('Expense','description',r.description,'text','required maxlength="300"')+owner+input('Amount (CNY)','amount',r.amount,'number','required min="0.01" step="0.01"')+select('Progress','status',['To submit','Awaiting approval','Needs documents','With finance','Paid'],r.status||'To submit',isFaculty?'':'disabled')+select('Receipt handoff','receipt_status',['Pending','Link pending','Link provided','Delivered offline'],r.receipt_status||'Pending')+visibility+input('Receipt link (optional)','receipt_link',r.receipt_link,'url','placeholder="https://..."')+input('Input tokens (optional)','input_tokens',r.input_tokens,'number','min="0" step="1"')+input('Output tokens (optional)','output_tokens',r.output_tokens,'number','min="0" step="1"')+textarea('Notes','notes',r.notes);
@@ -237,7 +252,7 @@
         `<label class="o-checkbox-label"><input name="done" type="checkbox" ${r.done?'checked':''}>Completed</label>`;
     }
     if(type==='signals')fields=input('Title','title',r.title,'text','required maxlength="300"')+select('Category','kind',['Paper pick','Interesting find','Tool','Small win'],r.kind||'Paper pick')+input('External link (optional)','link',r.link,'url')+textarea('Why it is worth sharing','notes',r.notes)+'<p class="o-note wide">Visible to all active lab members. Only the author and faculty can edit this post.</p>';
-    modal(old?(can?'Edit ':'View ')+names[type]:`New ${names[type]}`,`<form data-form="record"><fieldset ${can?'':'disabled'}><div class="o-fields">${fields}</div></fieldset>${!can?'<p class="o-feedback">This record is read-only. Archived records must be restored before editing.</p>':''}${can?formActions():`<div class="o-dialog-actions">${button('Close','data-close')}</div>`}</form>`,{type,old});
+    modal(old?(can?'Edit ':'View ')+names[type]:`New ${names[type]}`,`<form data-form="record"><fieldset ${can?'':'disabled'}><div class="o-fields">${fields}</div></fieldset>${!can?'<p class="o-feedback">This record is read-only. Archived records must be restored before editing.</p>':''}${can?formActions():`<div class="o-dialog-actions">${button('Close','data-close')}</div>`}</form>`,{type,old,projectMemberIds});
   }
   function bookingForm(id,d,h,personal=false){
     const old=id?row('calendar_slots',id):null;if(id&&!old)return;
@@ -260,7 +275,7 @@
     const dates=repeatDates(from,end.value,rule);
     preview.innerHTML=(dates.length?`<strong>${dates.length} meeting${dates.length===1?'':'s'} · through ${E(end.value)} (inclusive)</strong><details><summary>Review all dates</summary><ul>${dates.map(d=>`<li>${E(d)} · ${time(mins/60)}–${time((mins+length)/60)}</li>`).join('')}</ul></details>`:'Choose an end date to preview the meetings.')+`<p>All occurrences must be available; any conflict stops the whole series.${rule==='monthly'?' Same calendar date each month. Weekends and nonexistent dates are skipped, never shifted.':''}</p>`;
   }
-  function projectMembers(id){const p=project(id);if(!p||!faculty())return;modal('Project members',`<p class="o-sub">${E(p.name)}. Each change is saved immediately. Faculty always retains access.</p><div class="o-members-list">${S.rows.members.filter(m=>m.active).map(m=>`<label class="o-member-check"><input type="checkbox" data-membership="${m.id}" data-project="${p.id}" ${S.rows.project_members.some(x=>x.member_id===m.id&&x.project_id===id)?'checked':''}>${E(m.display_name)} · ${E(m.role)}</label>`).join('')}</div><div class="o-error" role="alert"></div><div class="o-dialog-actions">${button('Done','data-close')}</div>`);}
+  function projectMembers(id){if(!project(id)||!faculty())return;recordForm('projects',id);$('o-dialog-body').querySelector('[name=project_member_ids]')?.focus();}
   function account(){modal('My account',`<p class="o-sub">${E(S.session.user.email)}</p><form data-form="profile"><div class="o-fields">${input('Display name','display_name',S.me.display_name,'text','required maxlength="100"')}</div>${formActions('Save name')}</form><div class="o-section-space">${button('Change password','data-change-password')}</div>`);}
   function deleteDialog(type,id){const r=row(type==='meetings'?'calendar_slots':type,id);if(!r||!faculty())return;modal('Delete permanently',`<form data-form="delete"><div class="o-danger-box"><strong>${E(title(type==='meetings'?'calendar_slots':type,r))}</strong><p>This permanently deletes this record. It cannot be restored in ORBIT.${type==='projects'?' Linked papers must first be moved or explicitly deleted. They will never be deleted automatically.':''}</p></div>${input('Type DELETE to confirm','confirmation','','text','required pattern="DELETE" autocomplete="off"')}${formActions('Delete permanently')}</form>`,{type,id});}
   async function saveRecord(form,context){
@@ -268,6 +283,11 @@
     let payload={};const vis=faculty()?get('visibility'):(old?.visibility||'members');
     if(type==='projects')payload={name:get('name'),research_question:get('research_question'),status:get('status'),visibility:vis};
     if(type==='papers')payload={title:get('title'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),project_id:old&&!faculty()?old.project_id:nullable('project_id'),status:get('status'),current_holder_id:get('holder')==='journal'?null:nullable('holder'),external_holder:get('holder')==='journal'?'Journal':'',next_person_id:nullable('next_person_id'),target_date:nullable('target_date'),next_action:get('next_action'),link:get('link'),handoff:get('handoff'),visibility:vis};
+    if(type==='papers'){
+      payload.author_member_ids=[...new Set(data.getAll('author_member_ids').map(String))];
+      payload.external_authors=[...new Set(get('external_authors').split(/\r?\n/).map(s=>s.trim()).filter(Boolean))];
+      if(payload.external_authors.length>100||payload.external_authors.some(s=>s.length>200))throw new Error('Use up to 100 external author names, each no longer than 200 characters.');
+    }
     if(type==='expenses')payload={description:get('description'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),amount:Number(get('amount')),currency:'CNY',status:faculty()?get('status'):(old?.status||'To submit'),receipt_status:get('receipt_status'),receipt_link:get('receipt_link'),input_tokens:nullable('input_tokens')===null?null:Number(get('input_tokens')),output_tokens:nullable('output_tokens')===null?null:Number(get('output_tokens')),notes:get('notes'),visibility:get('visibility')};
     if(type==='tasks'){
       if(old&&!faculty()&&old.owner_id!==uid())payload={done:data.has('done')};
@@ -276,6 +296,9 @@
     if(type==='signals')payload={title:get('title'),kind:get('kind'),link:get('link'),notes:get('notes')};
     for(const key of ['link','receipt_link'])if(payload[key]&&!safeURL(payload[key]))throw new Error('Use an http or https link.');
     if((payload.handoff==='Link provided'&&!payload.link)||(payload.receipt_status==='Link provided'&&!payload.receipt_link))throw new Error('Add the link, or choose an offline/pending handoff.');
+    if(type==='projects'&&faculty()){
+      await rpc('orbit_save_project',{p_id:old?.id||null,p_expected_updated_at:old?.updated_at||null,p_expected_member_ids:old?context.projectMemberIds:null,p_name:payload.name,p_rq:payload.research_question,p_status:payload.status,p_visibility:payload.visibility,p_member_ids:[...new Set(data.getAll('project_member_ids').map(String))]});return;
+    }
     if(old){unwrap(await db.from('orbit_'+type).update(payload).eq('id',old.id).eq('updated_at',old.updated_at).select('id').single());}
     else if(type==='projects'){await rpc('orbit_create_project',{p_name:payload.name,p_rq:payload.research_question,p_status:payload.status,p_visibility:payload.visibility});}
     else{if(type==='tasks')payload.created_by=uid();if(type==='signals')payload.owner_id=uid();unwrap(await db.from('orbit_'+type).insert(payload).select('id').single());}
@@ -322,6 +345,7 @@
     if(b.hasAttribute('data-refresh'))return loadWorkspace();
     if(b.dataset.edit)return recordForm(b.dataset.edit,b.dataset.id);
     if(b.dataset.projectMembers)return projectMembers(b.dataset.projectMembers);
+    if(b.dataset.addProjectPaper){const p=project(b.dataset.addProjectPaper);if(p&&!p.archived_at&&(faculty()||inProject(p.id)))recordForm('papers','new',{project_id:p.id});return;}
     if(b.hasAttribute('data-account'))return account();
     if(b.hasAttribute('data-change-password')){close();needPassword=true;authScreen('password');return;}
     if(b.dataset.life){const archive=b.dataset.archive==='true';return mutate(()=>rpc('orbit_set_archived',{p_entity:b.dataset.life,p_id:b.dataset.id,p_archive:archive}),archive?'Archived. Find it in the Archived view.':'Restored.');}
@@ -346,16 +370,8 @@
     }
     if(b.dataset.confirmMember)return mutate(()=>rpc('orbit_set_student_active',{p_id:b.dataset.confirmMember,p_active:b.dataset.active==='true'}),'Membership updated.');
   });
-  root.addEventListener('change',async event=>{
+  root.addEventListener('change',event=>{
     const el=event.target;if(el.closest('form[data-form="booking"]'))bookingSummary(el.closest('form'));
-    if(!el.dataset.membership||!faculty()||S.saving)return;
-    const id=el.dataset.membership,projectId=el.dataset.project,checked=el.checked;el.disabled=true;S.saving=true;
-    try{
-      if(checked)unwrap(await db.from('orbit_project_members').insert({project_id:projectId,member_id:id}));
-      else unwrap(await db.from('orbit_project_members').delete().eq('project_id',projectId).eq('member_id',id));
-      await loadWorkspace({silent:true});toast('Project membership saved.');
-    }catch(error){el.checked=!checked;$('o-dialog-body').querySelector('.o-error').textContent=errorText(error);}
-    finally{S.saving=false;el.disabled=false;}
   });
   $('o-overlay').addEventListener('click',event=>{if(event.target===$('o-overlay'))close();});
   root.addEventListener('keydown',event=>{
