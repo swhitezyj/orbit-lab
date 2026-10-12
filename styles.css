@@ -524,3 +524,7 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 #orbit-lab .o-study-summary{align-self:start}
 @media(max-width:900px){#orbit-lab .o-research-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){#orbit-lab .o-research-details>summary{padding:16px}#orbit-lab .o-research-title{font-size:24px}#orbit-lab .o-program-body,#orbit-lab .o-study-body{padding:0 12px 16px}#orbit-lab .o-research-count{display:block;margin:6px 0}#orbit-lab .o-research-tools>.o-field{width:100%}#orbit-lab .o-research-stats .o-stat{padding:14px}}
+
+/* Explicit confirmation for research deletion. */
+.o-delete-children{display:flex;align-items:flex-start;gap:12px;margin:18px 0;font-size:16px;line-height:1.5}
+.o-delete-children input{width:20px;min-width:20px;height:20px;margin-top:3px;accent-color:#981e32}

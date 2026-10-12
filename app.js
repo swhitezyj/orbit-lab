@@ -70,10 +70,11 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(error?.code==='PGRST202'&&error?.message?.includes('orbit_delete_research'))return 'Deletion needs database update 012. Ask your faculty administrator to install it, then refresh. Nothing was deleted.';
     if((error?.code==='PGRST202'&&/orbit_save_study|orbit_research_map/.test(error?.message||''))||(['42703','PGRST204','42P01','PGRST205'].includes(error?.code)&&/program|lab_update/.test(error?.message||'')))return 'Research needs database update 011. Ask your faculty administrator to apply it, then refresh.';
     if(['42703','PGRST204'].includes(error?.code)&&/author_member_ids|external_authors/.test(error?.message||''))return 'Paper authors need database update 010. Ask your faculty administrator to apply it, then refresh.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_save_project'))return 'The project editor needs database update 010. Ask your faculty administrator to apply it, then refresh. No project changes were saved.';
-    if(error?.code==='40001')return 'This project or its members changed. Close this dialog, refresh, and reopen it before saving.';
+    if(error?.code==='40001')return 'This record or its members changed. Close this dialog, refresh, and review it before trying again.';
     if(error?.code==='23514'&&/orbit_papers_status_check/.test(error?.message||''))return 'The new paper stages need database update 011. Apply it before selecting Working paper, Accepted, or Published.';
     if(['42703','PGRST204'].includes(error?.code)&&error?.message?.includes('participant_ids'))return 'Task participants need database update 009. Ask your faculty administrator to apply it, then refresh.';
     if(['23505','23P01'].includes(error?.code))return 'That time overlaps an existing meeting or busy block. Refresh the calendar and choose another time.';
@@ -165,7 +166,7 @@
   function lifecycle(type,r){
     let out='';
     if(canArchive(type,r))out+=button(r.archived_at?'Restore':'Archive',`data-life="${type}" data-id="${r.id}" data-archive="${!r.archived_at}"`);
-    if(faculty()&&r.archived_at)out+=button('Delete permanently',`data-delete="${type}" data-id="${r.id}" data-danger`);
+    if(faculty()&&(r.archived_at||['projects','papers'].includes(type)))out+=button('Delete permanently',`data-delete="${type}" data-id="${r.id}" data-danger`);
     return out;
   }
   function recordCard(type,r){
@@ -216,7 +217,7 @@
     const match=(...parts)=>!query||parts.flat().join(' ').toLowerCase().includes(query);
     const studyMatches=s=>match(s.name,s.research_question,s.lab_update,s.member_names,s.status,studyStage(s),map.papers.filter(p=>p.project_id===s.id).map(p=>p.title));
     const groups=[...map.programs.filter(p=>all||p.status!=='Completed'),{id:'ungrouped',name:'Ungrouped studies',status:'',description:'Studies not yet assigned to a research program.'}];
-    const paperList=papers=>papers.map(p=>`<div class="o-research-paper"><span>${E(p.title)}</span>${badge(p.status)}${detailed&&row('papers',p.id)?button('View details',`data-edit="papers" data-id="${E(p.id)}"`):'<span class="o-muted">Summary only</span>'}</div>`).join('');
+    const paperList=papers=>papers.map(p=>`<div class="o-research-paper"><span>${E(p.title)}</span>${badge(p.status)}${detailed&&row('papers',p.id)?button('View details',`data-edit="papers" data-id="${E(p.id)}"`):'<span class="o-muted">Summary only</span>'}${detailed&&faculty()&&row('papers',p.id)?button('Delete paper',`data-delete="papers" data-id="${E(p.id)}" data-danger`):''}</div>`).join('');
     const content=groups.map(program=>{
       const studies=map.studies.filter(s=>(program.id==='ungrouped'?!s.program_id:s.program_id===program.id)&&(all||s.status!=='Completed'));
       const programMatch=match(program.name,program.description,program.research_question);
@@ -226,13 +227,13 @@
       const counts=countLabel(studies.length,'study','studies')+' · '+countLabel(wps,'working paper');
       const members=[...new Set(map.studies.filter(s=>s.program_id===program.id).flatMap(s=>s.member_names||[]))].sort();
       const key='program:'+program.id;
-      return `<details class="o-program o-research-details" data-map-fold data-fold="${E(key)}" ${query||foldOpen(key)?'open':''}><summary><span class="o-research-title">${E(program.name)}</span><span class="o-research-count">${E(counts)}</span>${program.status?badge(program.status):''}</summary><div class="o-program-body">${program.description?`<p>${E(program.description)}</p>`:''}${program.research_question?`<p><span class="o-rq-label">Program RQ</span>${E(program.research_question)}</p>`:''}${members.length?`<p><span class="o-rq-label">Members across studies</span>${members.map(E).join(' · ')}</p>`:''}${detailed&&faculty()&&program.id!=='ungrouped'?`<div class="o-card-actions">${button('Edit program',`data-program="${E(program.id)}"`)}${button('+ Add study',`data-add-study="${E(program.id)}"`)}</div>`:''}<div class="${S.layouts.commons==='cards'?'o-grid':'o-stack'}">${shown.map(s=>{
+      return `<details class="o-program o-research-details" data-map-fold data-fold="${E(key)}" ${query||foldOpen(key)?'open':''}><summary><span class="o-research-title">${E(program.name)}</span><span class="o-research-count">${E(counts)}</span>${program.status?badge(program.status):''}</summary><div class="o-program-body">${program.description?`<p>${E(program.description)}</p>`:''}${program.research_question?`<p><span class="o-rq-label">Program RQ</span>${E(program.research_question)}</p>`:''}${members.length?`<p><span class="o-rq-label">Members across studies</span>${members.map(E).join(' · ')}</p>`:''}${detailed&&faculty()&&program.id!=='ungrouped'?`<div class="o-card-actions">${button('Edit program',`data-program="${E(program.id)}"`)}${button('+ Add study',`data-add-study="${E(program.id)}"`)}${button('Delete program',`data-delete="programs" data-id="${E(program.id)}" data-danger`)}</div>`:''}<div class="${S.layouts.commons==='cards'?'o-grid':'o-stack'}">${shown.map(s=>{
         const papers=map.papers.filter(p=>p.project_id===s.id),skey='study:'+s.id;
         const info=`<p><span class="o-rq-label">Members</span>${s.member_names?.map(E).join(' · ')||'No active members assigned.'}</p><p><span class="o-rq-label">RQ</span>${E(s.research_question||'Research question to be added.')}</p><p><span class="o-rq-label">Lab-visible update</span>${E(s.lab_update||'No update shared yet.')}</p>`;
         const summary=`<span class="o-research-title">${E(s.name)}</span><span>${badge(studyStage(s))} ${badge(s.status,'blue')}</span>`;
         if(!detailed)return `<article class="o-card o-study-summary">${summary}${info}</article>`;
         const own=row('projects',s.id);
-        return `<details class="o-study o-research-details" data-map-fold data-fold="${E(skey)}" ${query||foldOpen(skey)?'open':''}><summary>${summary}</summary><div class="o-study-body">${info}<h3>Papers · ${papers.length}</h3>${paperList(papers)||'<p>No papers linked yet.</p>'}${own?`<div class="o-card-actions">${button(editable('projects',own)?'Edit study':'View study',`data-edit="projects" data-id="${E(s.id)}"`)}${editable('projects',own)?button('+ Add paper',`data-add-project-paper="${E(s.id)}"`):''}</div>`:'<p class="o-feedback">Lab-visible summary · read-only</p>'}</div></details>`;
+        return `<details class="o-study o-research-details" data-map-fold data-fold="${E(skey)}" ${query||foldOpen(skey)?'open':''}><summary>${summary}</summary><div class="o-study-body">${info}<h3>Papers · ${papers.length}</h3>${paperList(papers)||'<p>No papers linked yet.</p>'}${own?`<div class="o-card-actions">${button(editable('projects',own)?'Edit study':'View study',`data-edit="projects" data-id="${E(s.id)}"`)}${editable('projects',own)?button('+ Add paper',`data-add-project-paper="${E(s.id)}"`):''}${faculty()?button('Delete study',`data-delete="projects" data-id="${E(s.id)}" data-danger`):''}</div>`:'<p class="o-feedback">Lab-visible summary · read-only</p>'}</div></details>`;
       }).join('')||empty('No studies in this program yet.')}</div></div></details>`;
     }).join('');
     const independent=map.papers.filter(p=>!p.project_id&&match(p.title,p.status));
@@ -241,8 +242,8 @@
   function researchView(){
     const records=visibleRows('projects').sort((a,b)=>a.name.localeCompare(b.name));
     return heading('YZ LAB / RESEARCH WORKSPACE','Research','Long-term directions. Studies in progress. Papers taking shape.',`<div class="o-card-actions">${faculty()?button('+ New program','data-program="new"',true):''}${button('+ New study','data-edit="projects" data-id="new"')}</div>`)+researchPanel(true)+
-      `<details class="o-research-details o-section-space" data-fold="workspace" ${foldOpen('workspace')?'open':''}><summary>Your study records · edit, archive & restore</summary><p class="o-sub">Only studies you can access. Archiving is separate from marking a study Completed.</p><div class="o-view-toolbar">${filters()}${layoutToggle('projects')}</div>${records.length?collection('projects',records):empty('No study records in this view.')}</details>`+
-      (faculty()?`<details class="o-research-details o-section-space" data-fold="program-management" ${foldOpen('program-management')?'open':''}><summary>Manage programs · archive & restore</summary><p class="o-sub">Archiving hides the program and its studies from the research map and totals, without deleting any records. Detailed record permissions do not change.</p>${S.programs.map(p=>`<div class="o-research-paper"><span>${E(p.name)}</span>${badge(p.archived_at?'Archived':p.status)}${!p.archived_at?button('Edit',`data-program="${E(p.id)}"`):''}${button(p.archived_at?'Restore':'Archive',`data-program-life="${E(p.id)}"`)}</div>`).join('')||empty('No programs yet.')}</details>`:'');
+      `<details class="o-research-details o-section-space" data-fold="workspace" ${foldOpen('workspace')?'open':''}><summary>Your study records · edit, archive, restore & delete</summary><p class="o-sub">Only studies you can access. Archiving is separate from marking a study Completed.</p><div class="o-view-toolbar">${filters()}${layoutToggle('projects')}</div>${records.length?collection('projects',records):empty('No study records in this view.')}</details>`+
+      (faculty()?`<details class="o-research-details o-section-space" data-fold="program-management" ${foldOpen('program-management')?'open':''}><summary>Manage programs · archive, restore & delete</summary><p class="o-sub">Archiving hides the program and its studies from the research map and totals, without deleting any records. Detailed record permissions do not change.</p>${S.programs.map(p=>`<div class="o-research-paper"><span>${E(p.name)}</span>${badge(p.archived_at?'Archived':p.status)}${!p.archived_at?button('Edit',`data-program="${E(p.id)}"`):''}${button(p.archived_at?'Restore':'Archive',`data-program-life="${E(p.id)}"`)}${button('Delete program',`data-delete="programs" data-id="${E(p.id)}" data-danger`)}</div>`).join('')||empty('No programs yet.')}</details>`:'');
   }
   function programForm(id){
     if(!faculty())return;const old=id==='new'?null:S.programs.find(p=>p.id===id);if(id!=='new'&&!old)return;
@@ -335,7 +336,15 @@
   }
   function projectMembers(id){if(!project(id)||!faculty())return;recordForm('projects',id);$('o-dialog-body').querySelector('[name=project_member_ids]')?.focus();}
   function account(){modal('My account',`<p class="o-sub">${E(S.session.user.email)}</p><form data-form="profile"><div class="o-fields">${input('Display name','display_name',S.me.display_name,'text','required maxlength="100"')}</div>${formActions('Save name')}</form><div class="o-section-space">${button('Change password','data-change-password')}</div>`);}
-  function deleteDialog(type,id){const r=row(type==='meetings'?'calendar_slots':type,id);if(!r||!faculty())return;modal('Delete permanently',`<form data-form="delete"><div class="o-danger-box"><strong>${E(title(type==='meetings'?'calendar_slots':type,r))}</strong><p>This permanently deletes this record. It cannot be restored in ORBIT.${type==='projects'?' Linked papers must first be moved or explicitly deleted. They will never be deleted automatically.':''}</p></div>${input('Type DELETE to confirm','confirmation','','text','required pattern="DELETE" autocomplete="off"')}${formActions('Delete permanently')}</form>`,{type,id});}
+  function deleteDialog(type,id){
+    const research=['programs','projects','papers'].includes(type);
+    const r=type==='programs'?S.programs.find(p=>p.id===id):row(type==='meetings'?'calendar_slots':type,id);
+    if(!r||!faculty())return;
+    const label=type==='programs'?r.name:title(type==='meetings'?'calendar_slots':type,r);
+    const children=type==='programs'?'all studies in this program and their papers':type==='projects'?'all papers linked to this study':'';
+    modal('Delete permanently',`<form data-form="delete"><div class="o-danger-box"><strong>${E(label)}</strong><p>This permanently deletes this record. It cannot be restored in ORBIT.</p>${children?`<p>Deleting linked records requires the additional choice below. This includes completed and archived records, even when hidden from the research map. Move any records you want to keep before continuing.</p>`:''}</div>${children?`<label class="o-delete-children"><input type="checkbox" name="delete_children" value="yes"><span>Also permanently delete ${E(children)}, including archived records. Without this choice, deletion is blocked if linked records exist.</span></label>`:''}${input('Type DELETE to confirm','confirmation','','text','required pattern="DELETE" autocomplete="off"')}${formActions('Delete permanently')}</form>`,{type,id,research,updatedAt:r.updated_at});
+  }
+
   async function saveRecord(form,context){
     const {type,old}=context,data=new FormData(form),get=k=>String(data.get(k)??'').trim(),nullable=k=>get(k)||null;
     let payload={};const vis=faculty()?get('visibility'):(old?.visibility||'members');
@@ -388,7 +397,10 @@
         }
         return unwrap(await (context.old?db.from('orbit_calendar_slots').update(payload).eq('id',context.old.id).eq('updated_at',context.old.updated_at):db.from('orbit_calendar_slots').insert(payload)).select('id').single());
       }
-      if(form.dataset.form==='delete')return rpc('orbit_delete_record',{p_entity:context.type,p_id:context.id,p_confirmation:get('confirmation')});
+      if(form.dataset.form==='delete'){
+        if(context.research)return rpc('orbit_delete_research',{p_entity:context.type,p_id:context.id,p_expected_updated_at:context.updatedAt,p_confirmation:get('confirmation'),p_delete_children:get('delete_children')==='yes'});
+        return rpc('orbit_delete_record',{p_entity:context.type,p_id:context.id,p_confirmation:get('confirmation')});
+      }
       if(form.dataset.form==='profile')return unwrap(await db.from('orbit_members').update({display_name:get('display_name')}).eq('id',uid()).select('id').single());
       if(form.dataset.form==='activate')return rpc('orbit_activate_student',{p_email:get('email'),p_name:get('display_name')});
     },form.dataset.form==='delete'?'Record permanently deleted. It cannot be restored in ORBIT.':'Saved.');
