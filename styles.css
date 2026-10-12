@@ -408,6 +408,10 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 #orbit-lab .o-commons{padding:12px 0 28px;border-bottom:1px solid var(--o-border)}
 #orbit-lab .o-commons>.o-sub{margin:0 0 22px}
 #orbit-lab .o-summary-members{overflow-wrap:anywhere}
+#orbit-lab .o-task-participants{overflow-wrap:anywhere}
+#orbit-lab .o-task-assignees{border:1px solid var(--o-border);padding:16px;min-width:0;margin:0}
+#orbit-lab .o-task-assignees legend{font-size:16px;font-weight:600;padding:0 6px;color:var(--o-text)}
+#orbit-lab .o-task-assignees .o-member-check{font-size:16px;overflow-wrap:anywhere}
 #orbit-lab .o-index{font:italic 22px var(--o-serif);color:var(--o-muted)}
 #orbit-lab .o-rq-label{font-size:12px;letter-spacing:.08em;display:block;color:var(--o-purple);margin-bottom:4px}
 #orbit-lab .o-record-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--o-border)}

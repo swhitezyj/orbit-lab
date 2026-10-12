@@ -11,7 +11,7 @@
   }
   // Only the color preference is persistent. No account or research data here.
   try{setTheme(localStorage.getItem('orbit-color-theme'));}catch{setTheme('dark');}
-  const names={home:'Overview',papers:'Papers',projects:'Projects',calendar:'Meeting Calendar',expenses:'Expenses',tasks:'Tasks & TA',signals:'Signals',members:'Members'};
+  const names={home:'Overview',papers:'Papers',projects:'Projects',calendar:'Meeting Calendar',expenses:'Expenses',tasks:'Tasks & TA',signals:'Lab Lounge',members:'Members'};
   const glyphs={home:'◈',papers:'▤',projects:'◎',calendar:'▦',expenses:'◇',tasks:'☷',signals:'✦',members:'◉'};
   const tables=['members','projects','project_members','papers','expenses','tasks','calendar_slots','signals'];
   const emptyRows=()=>Object.fromEntries(tables.map(t=>[t,[]]));
@@ -42,13 +42,14 @@
   const person=id=>S.rows.members.find(m=>m.id===id)?.display_name||'Unassigned';
   const project=id=>S.rows.projects.find(p=>p.id===id);
   const inProject=id=>S.rows.project_members.some(m=>m.project_id===id&&m.member_id===uid());
+  const taskParticipant=r=>(r.participant_ids||[]).includes(uid());
   const row=(type,id)=>S.rows[type]?.find(r=>r.id===id);
   const title=(type,r)=>type==='projects'?r.name:type==='expenses'?r.description:type==='calendar_slots'?r.topic||'Busy block':r.title;
   const archived=(type,r)=>Boolean(r.archived_at||(type==='papers'&&project(r.project_id)?.archived_at));
   const activeRows=type=>S.rows[type].filter(r=>!archived(type,r));
   const visibleRows=type=>S.rows[type].filter(r=>S.filter==='all'||(S.filter==='archived'?archived(type,r):!archived(type,r)));
   const editable=(type,r)=>!r.archived_at&&!r.cancelled_at&&(faculty()||
-    (type==='projects'?inProject(r.id):type==='papers'?(r.owner_id===uid()||inProject(r.project_id)):r.owner_id===uid()));
+    (type==='projects'?inProject(r.id):type==='papers'?(r.owner_id===uid()||inProject(r.project_id)):type==='tasks'?(r.owner_id===uid()||taskParticipant(r)):r.owner_id===uid()));
   const canArchive=(type,r)=>faculty()||(['papers','tasks','signals'].includes(type)&&r.owner_id===uid());
   const button=(text,attrs='',primary=false)=>`<button type="button" class="o-btn ${primary?'primary':''}" ${attrs}>${text}</button>`;
   const badge=(text,color='purple')=>`<span class="o-badge ${color}">${E(text)}</span>`;
@@ -64,6 +65,7 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(['42703','PGRST204'].includes(error?.code)&&error?.message?.includes('participant_ids'))return 'Task participants need database update 009. Ask your faculty administrator to apply it, then refresh.';
     if(['23505','23P01'].includes(error?.code))return 'That time overlaps an existing meeting or busy block. Refresh the calendar and choose another time.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_availability_v2'))return 'The calendar database update is not installed yet. Ask your faculty administrator to apply migration 005, then retry.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_create_meeting_series'))return 'Recurring meetings need database update 006. Ask your faculty administrator to apply it before booking a series.';
@@ -166,15 +168,16 @@
       meta=`${person(r.owner_id)} · ${r.receipt_status}`;
       body=`<h3>${E(r.currency)} ${Number(r.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</h3><p>${E(r.notes)}</p>${r.input_tokens!==null||r.output_tokens!==null?`<p>Tokens · Input ${E(r.input_tokens??'—')} / Output ${E(r.output_tokens??'—')}</p>`:''}${external(r.receipt_link)}`;
     }else if(type==='tasks'){
-      meta=`${person(r.owner_id)} · ${date(r.due_date)}`;state=r.done?'Completed':r.category;
+      meta=`Owner: ${person(r.owner_id)} · ${date(r.due_date)}`;state=r.done?'Completed':r.category;
+      body=`<p class="o-task-participants"><span class="o-rq-label">Participants</span>${r.participant_ids?.length?r.participant_ids.map(id=>E(person(id))).join(' · '):'No additional participants.'}</p>`;
     }else{meta=person(r.owner_id);body=`<p>${E(r.notes)}</p>${external(r.link)}`;}
-    const access=r.visibility?badge(r.visibility==='lab'?'Lab-wide':type==='expenses'?'Private':'Project members','blue'):'';
+    const access=r.visibility?badge(r.visibility==='lab'?'Lab-wide':type==='expenses'?'Private':'Project members','blue'):type==='signals'?badge('Lab-wide','blue'):'';
     const parentArchived=type==='papers'&&project(r.project_id)?.archived_at;
     return `<article class="o-card"><div class="o-card-top">${badge(state||'In progress')}${r.archived_at?badge('Archived','warm'):parentArchived?badge('Project archived','warm'):''}</div><h3>${E(title(type,r))}</h3><div class="o-card-meta">${E(meta)}</div>${body}<div>${access}</div><div class="o-card-actions">${button(editable(type,r)?'Edit':'View details',`data-edit="${type}" data-id="${r.id}"`)}${type==='projects'&&faculty()&&!r.archived_at?button('Members',`data-project-members="${r.id}"`):''}${lifecycle(type,r)}</div></article>`;
   }
   function listView(type){
-    const subtitles={papers:'Who owns it. Who has it. What happens next.',projects:'People, research questions, and the current state of the work.',expenses:'Amounts, receipt handoffs, token usage, and reimbursement progress.',tasks:'What needs doing, who has it, and when it is due.',signals:'Good papers, useful tools, and small discoveries.'};
-    const add={papers:'Add paper',projects:'New project',expenses:'Add expense',tasks:'Add task',signals:'Share a signal'};
+    const subtitles={papers:'Who owns it. Who has it. What happens next.',projects:'People, research questions, and the current state of the work.',expenses:'Amounts, receipt handoffs, token usage, and reimbursement progress.',tasks:'One owner, a shared effort, and a clear deadline. Visible to faculty, the owner, and assigned participants.',signals:'Good papers, useful tools, and small discoveries. Shared with all active lab members.'};
+    const add={papers:'Add paper',projects:'New project',expenses:'Add expense',tasks:'Add task',signals:'Share something'};
     const records=visibleRows(type).sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
     return heading('YZ LAB / RESEARCH WORKSPACE',names[type],subtitles[type],button('+ '+add[type],`data-edit="${type}" data-id="new"`,true))+(type==='projects'?commonsPanel()+'<h2 class="o-section-space">Your project workspace</h2><p class="o-sub">Details and editing remain limited to your existing permissions.</p>':'')+`<div class="o-view-toolbar">${filters()}${['papers','projects'].includes(type)?layoutToggle(type):''}</div>`+
       (records.length?collection(type,records):empty(S.filter==='archived'?'Nothing archived here.':'Nothing here yet. Add the first record when you are ready.'));
@@ -186,7 +189,7 @@
   }
   function home(){
     const papers=activeRows('papers').filter(p=>p.current_holder_id===uid());
-    const tasks=activeRows('tasks').filter(t=>!t.done&&(faculty()||t.owner_id===uid())).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
+    const tasks=activeRows('tasks').filter(t=>!t.done&&(faculty()||t.owner_id===uid()||taskParticipant(t))).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
     const upcoming=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&!s.cancelled_at&&s.slot_date>=dateNow()).sort((a,b)=>(a.slot_date+time(startMinutes(a)/60)).localeCompare(b.slot_date+time(startMinutes(b)/60))).slice(0,2);
     return heading('ORBIT / YZ LAB',`Welcome back, ${S.me.display_name}.`,'Good taste, shared context, research in motion.',button('+ New task','data-edit="tasks" data-id="new"',true))+
       `<div class="o-stat-grid"><div class="o-stat"><strong>${S.commonsError?'—':S.commons.length}</strong><span>Ongoing projects across YZ Lab</span></div><div class="o-stat"><strong>${papers.length}</strong><span>Papers on your desk</span></div><div class="o-stat"><strong>${tasks.length}</strong><span>Open tasks</span></div></div>${commonsPanel()}<div class="o-layout o-section-space"><div class="o-stack"><section><div class="o-panel-head"><h2>On your desk</h2>${layoutToggle('papers')}${button('All papers ↗','data-view="papers"')}</div>${papers.length?collection('papers',papers.slice(0,4)):empty('Nothing waiting on you right now.')}</section><section><div class="o-panel-head"><h2>Your projects</h2>${layoutToggle('projects')}${button('All projects ↗','data-view="projects"')}</div>${activeRows('projects').length?collection('projects',activeRows('projects').slice(0,4)):empty('Your next research question starts here.')}</section></div><div class="o-stack"><section><div class="o-panel-head"><h2>Next on the calendar</h2></div>${upcoming.map(meetingCard).join('')||empty('No upcoming meetings or personal schedules.')}<div class="o-section-space">${button('Open calendar →','data-view="calendar"')}</div></section><section><div class="o-panel-head"><h2>Coming up</h2></div><div class="o-stack">${tasks.slice(0,2).map(t=>recordCard('tasks',t)).join('')||empty('All caught up.')}</div></section></div></div>`;
@@ -225,8 +228,15 @@
         select('Status','status',['Draft','Revision','Ready to submit','Submitted'],r.status||'Draft')+select('Currently with','holder',[...people(true),['journal','Journal']],r.external_holder?'journal':old?(r.current_holder_id||''):uid())+select('Next person','next_person_id',people(true),r.next_person_id)+input('Target deadline','target_date',r.target_date,'date')+visibility+select('Material handoff','handoff',['Link pending','Link provided','Shared offline'],r.handoff||'Link pending')+input('Document link (optional)','link',r.link,'url','placeholder="https://..."')+textarea('Next action','next_action',r.next_action);
     }
     if(type==='expenses')fields=input('Expense','description',r.description,'text','required maxlength="300"')+owner+input('Amount (CNY)','amount',r.amount,'number','required min="0.01" step="0.01"')+select('Progress','status',['To submit','Awaiting approval','Needs documents','With finance','Paid'],r.status||'To submit',isFaculty?'':'disabled')+select('Receipt handoff','receipt_status',['Pending','Link pending','Link provided','Delivered offline'],r.receipt_status||'Pending')+visibility+input('Receipt link (optional)','receipt_link',r.receipt_link,'url','placeholder="https://..."')+input('Input tokens (optional)','input_tokens',r.input_tokens,'number','min="0" step="1"')+input('Output tokens (optional)','output_tokens',r.output_tokens,'number','min="0" step="1"')+textarea('Notes','notes',r.notes);
-    if(type==='tasks')fields=input('Task','title',r.title,'text','required maxlength="300"')+owner+input('Deadline','due_date',r.due_date,'date')+select('Category','category',['Admin','Teaching','Lab meeting'],r.category||'Admin')+`<label class="o-checkbox-label"><input name="done" type="checkbox" ${r.done?'checked':''}>Completed</label>`;
-    if(type==='signals')fields=input('Title','title',r.title,'text','required maxlength="300"')+select('Category','kind',['Paper pick','Interesting find','Tool','Small win'],r.kind||'Paper pick')+input('External link (optional)','link',r.link,'url')+textarea('Why it is worth sharing','notes',r.notes);
+    if(type==='tasks'){
+      const progressOnly=old&&!isFaculty&&r.owner_id!==uid(),locked=progressOnly?'disabled':'';
+      const candidates=S.rows.members.filter(m=>(m.active&&m.role==='student')||(r.participant_ids||[]).includes(m.id));
+      const taskOwner=select('Owner','owner_id',S.rows.members.filter(m=>m.active||m.id===r.owner_id).map(m=>[m.id,m.display_name+(m.active?'':' · inactive')]),r.owner_id,'required '+(isFaculty?'':'disabled'));
+      fields=input('Task','title',r.title,'text',`required maxlength="300" ${locked}`)+taskOwner+input('Deadline','due_date',r.due_date,'date',locked)+select('Category','category',['Admin','Teaching','Lab meeting'],r.category||'Admin',locked)+
+        `<fieldset class="o-task-assignees wide" ${isFaculty?'':'disabled'}><legend>Participants</legend><div class="o-members-list">${candidates.map(m=>`<label class="o-member-check"><input type="checkbox" name="participant_ids" value="${E(m.id)}" ${(r.participant_ids||[]).includes(m.id)?'checked':''}>${E(m.display_name)}${m.active?'':' · inactive'}</label>`).join('')||'<p>No active students to assign yet.</p>'}</div></fieldset><p class="o-note wide">${isFaculty?'Select any number of students. The owner already has access and is not duplicated in the participant list.':'Only faculty can change the owner or participants.'} ${progressOnly?'You can update completion; the owner manages the task details.':'Participants can view this task and update completion.'}</p>`+
+        `<label class="o-checkbox-label"><input name="done" type="checkbox" ${r.done?'checked':''}>Completed</label>`;
+    }
+    if(type==='signals')fields=input('Title','title',r.title,'text','required maxlength="300"')+select('Category','kind',['Paper pick','Interesting find','Tool','Small win'],r.kind||'Paper pick')+input('External link (optional)','link',r.link,'url')+textarea('Why it is worth sharing','notes',r.notes)+'<p class="o-note wide">Visible to all active lab members. Only the author and faculty can edit this post.</p>';
     modal(old?(can?'Edit ':'View ')+names[type]:`New ${names[type]}`,`<form data-form="record"><fieldset ${can?'':'disabled'}><div class="o-fields">${fields}</div></fieldset>${!can?'<p class="o-feedback">This record is read-only. Archived records must be restored before editing.</p>':''}${can?formActions():`<div class="o-dialog-actions">${button('Close','data-close')}</div>`}</form>`,{type,old});
   }
   function bookingForm(id,d,h,personal=false){
@@ -259,7 +269,10 @@
     if(type==='projects')payload={name:get('name'),research_question:get('research_question'),status:get('status'),visibility:vis};
     if(type==='papers')payload={title:get('title'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),project_id:old&&!faculty()?old.project_id:nullable('project_id'),status:get('status'),current_holder_id:get('holder')==='journal'?null:nullable('holder'),external_holder:get('holder')==='journal'?'Journal':'',next_person_id:nullable('next_person_id'),target_date:nullable('target_date'),next_action:get('next_action'),link:get('link'),handoff:get('handoff'),visibility:vis};
     if(type==='expenses')payload={description:get('description'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),amount:Number(get('amount')),currency:'CNY',status:faculty()?get('status'):(old?.status||'To submit'),receipt_status:get('receipt_status'),receipt_link:get('receipt_link'),input_tokens:nullable('input_tokens')===null?null:Number(get('input_tokens')),output_tokens:nullable('output_tokens')===null?null:Number(get('output_tokens')),notes:get('notes'),visibility:get('visibility')};
-    if(type==='tasks')payload={title:get('title'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),due_date:nullable('due_date'),category:get('category'),done:data.has('done')};
+    if(type==='tasks'){
+      if(old&&!faculty()&&old.owner_id!==uid())payload={done:data.has('done')};
+      else payload={title:get('title'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),due_date:nullable('due_date'),category:get('category'),done:data.has('done'),participant_ids:faculty()?[...new Set(data.getAll('participant_ids').map(String))].filter(id=>id!==get('owner_id')):(old?.participant_ids||[])};
+    }
     if(type==='signals')payload={title:get('title'),kind:get('kind'),link:get('link'),notes:get('notes')};
     for(const key of ['link','receipt_link'])if(payload[key]&&!safeURL(payload[key]))throw new Error('Use an http or https link.');
     if((payload.handoff==='Link provided'&&!payload.link)||(payload.receipt_status==='Link provided'&&!payload.receipt_link))throw new Error('Add the link, or choose an offline/pending handoff.');
