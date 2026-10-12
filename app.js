@@ -49,7 +49,9 @@
   const taskParticipant=r=>(r.participant_ids||[]).includes(uid());
   const row=(type,id)=>S.rows[type]?.find(r=>r.id===id);
   const title=(type,r)=>type==='projects'?r.name:type==='expenses'?r.description:type==='calendar_slots'?r.topic||'Busy block':r.title;
-  const archived=(type,r)=>Boolean(r.archived_at||(type==='papers'&&project(r.project_id)?.archived_at));
+  const paperProgram=r=>S.programs.find(p=>p.id===(r.program_id||project(r.project_id)?.program_id));
+  const paperParentArchived=r=>Boolean(project(r.project_id)?.archived_at||paperProgram(r)?.archived_at);
+  const archived=(type,r)=>Boolean(r.archived_at||(type==='papers'&&paperParentArchived(r)));
   const activeRows=type=>S.rows[type].filter(r=>!archived(type,r));
   const visibleRows=type=>S.rows[type].filter(r=>S.filter==='all'||(S.filter==='archived'?archived(type,r):!archived(type,r)));
   const editable=(type,r)=>!r.archived_at&&!r.cancelled_at&&(faculty()||
@@ -70,6 +72,7 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(['42703','PGRST204'].includes(error?.code)&&/program_id/.test(error?.message||''))return 'Direct program papers need database update 013. Install it before using this version, then refresh.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_delete_research'))return 'Deletion needs database update 012. Ask your faculty administrator to install it, then refresh. Nothing was deleted.';
     if((error?.code==='PGRST202'&&/orbit_save_study|orbit_research_map/.test(error?.message||''))||(['42703','PGRST204','42P01','PGRST205'].includes(error?.code)&&/program|lab_update/.test(error?.message||'')))return 'Research needs database update 011. Ask your faculty administrator to apply it, then refresh.';
     if(['42703','PGRST204'].includes(error?.code)&&/author_member_ids|external_authors/.test(error?.message||''))return 'Paper authors need database update 010. Ask your faculty administrator to apply it, then refresh.';
@@ -177,7 +180,7 @@
       body=`<p>${E(r.research_question||'Research question not set yet.')}</p><div class="o-project-papers"><span class="o-rq-label">Active papers you can access · ${papers.length}</span>${papers.length?papers.map(p=>`<div class="o-linked-paper">${button(E(p.title),`data-edit="papers" data-id="${p.id}"`)}<span class="o-muted">${E(p.status)} · Authors: ${E(authorNames(p).join(' · ')||'Not set')}</span></div>`).join(''):'<p>No accessible active papers linked yet.</p>'}${!r.archived_at&&(faculty()||inProject(r.id))?button('+ Add paper',`data-add-project-paper="${r.id}"`):''}</div>`;
     }else if(type==='papers'){
       meta=`Owner: ${person(r.owner_id)} · ${date(r.target_date)}`;
-      body=`<p>${E(project(r.project_id)?.name||'Independent paper')}</p><p><span class="o-rq-label">Authors</span>${E(authorNames(r).join(' · ')||'Authors not set yet.')}</p><div class="o-handoff">With <strong>${E(r.external_holder||person(r.current_holder_id))}</strong> → Next <strong>${E(person(r.next_person_id))}</strong></div><p>${E(r.next_action)}</p>${external(r.link)}`;
+      body=`<p>${E(r.program_id?(paperProgram(r)?.name||'Research program')+' · Direct paper':project(r.project_id)?.name||'Independent paper')}</p><p><span class="o-rq-label">Authors</span>${E(authorNames(r).join(' · ')||'Authors not set yet.')}</p><div class="o-handoff">With <strong>${E(r.external_holder||person(r.current_holder_id))}</strong> → Next <strong>${E(person(r.next_person_id))}</strong></div><p>${E(r.next_action)}</p>${external(r.link)}`;
     }else if(type==='expenses'){
       meta=`${person(r.owner_id)} · ${r.receipt_status}`;
       body=`<h3>${E(r.currency)} ${Number(r.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</h3><p>${E(r.notes)}</p>${r.input_tokens!==null||r.output_tokens!==null?`<p>Tokens · Input ${E(r.input_tokens??'—')} / Output ${E(r.output_tokens??'—')}</p>`:''}${external(r.receipt_link)}`;
@@ -185,8 +188,8 @@
       meta=`Owner: ${person(r.owner_id)} · ${date(r.due_date)}`;state=r.done?'Completed':r.category;
       body=`<p class="o-task-participants"><span class="o-rq-label">Participants</span>${r.participant_ids?.length?r.participant_ids.map(id=>E(person(id))).join(' · '):'No additional participants.'}</p>`;
     }else{meta=person(r.owner_id);body=`<p>${E(r.notes)}</p>${external(r.link)}`;}
-    const access=r.visibility?badge(r.visibility==='lab'?'Lab-wide':type==='expenses'?'Private':'Project members','blue'):type==='signals'?badge('Lab-wide','blue'):'';
-    const parentArchived=type==='papers'&&project(r.project_id)?.archived_at;
+    const access=r.visibility?badge(r.visibility==='lab'?'Lab-wide':type==='expenses'?'Private':type==='papers'&&!r.project_id?'Owner + faculty':'Project members','blue'):type==='signals'?badge('Lab-wide','blue'):'';
+    const parentArchived=type==='papers'&&paperParentArchived(r);
     return `<article class="o-card"><div class="o-card-top">${badge(state||'In progress')}${r.archived_at?badge('Archived','warm'):parentArchived?badge('Project archived','warm'):''}</div><h3>${E(title(type,r))}</h3><div class="o-card-meta">${E(meta)}</div>${body}<div>${access}</div><div class="o-card-actions">${button(editable(type,r)?'Edit':'View details',`data-edit="${type}" data-id="${r.id}"`)}${type==='projects'&&faculty()&&!r.archived_at?button('Members',`data-project-members="${r.id}"`):''}${lifecycle(type,r)}</div></article>`;
   }
   function listView(type){
@@ -222,23 +225,25 @@
       const studies=map.studies.filter(s=>(program.id==='ungrouped'?!s.program_id:s.program_id===program.id)&&(all||s.status!=='Completed'));
       const programMatch=match(program.name,program.description,program.research_question);
       const shown=studies.filter(s=>programMatch||studyMatches(s));
-      if((program.id==='ungrouped'&&!studies.length)||(query&&!programMatch&&!shown.length))return '';
+      const direct=program.id==='ungrouped'?[]:map.papers.filter(p=>p.program_id===program.id);
+      const shownDirect=direct.filter(p=>programMatch||match(p.title,p.status));
+      if((program.id==='ungrouped'&&!studies.length)||(query&&!programMatch&&!shown.length&&!shownDirect.length))return '';
       const programStudies=map.studies.filter(s=>program.id==='ungrouped'?!s.program_id:s.program_id===program.id);
-      const ids=new Set(programStudies.map(s=>s.id)),paperTotal=map.papers.filter(p=>ids.has(p.project_id)).length;
+      const ids=new Set(programStudies.map(s=>s.id)),paperTotal=map.papers.filter(p=>ids.has(p.project_id)||p.program_id===program.id).length;
       const counts=countLabel(studies.length,'study','studies')+' · '+paperTotal+' total papers';
       const members=[...new Set(map.studies.filter(s=>s.program_id===program.id).flatMap(s=>s.member_names||[]))].sort();
       const key='program:'+program.id;
-      return `<details class="o-program o-research-details" data-map-fold data-fold="${E(key)}" ${query||foldOpen(key)?'open':''}><summary><span class="o-research-title">${E(program.name)}</span><span class="o-research-count">${E(counts)}</span>${program.status?badge(program.status):''}</summary><div class="o-program-body">${program.description?`<p>${E(program.description)}</p>`:''}${program.research_question?`<p><span class="o-rq-label">Program RQ</span>${E(program.research_question)}</p>`:''}${members.length?`<p><span class="o-rq-label">Members across studies</span>${members.map(E).join(' · ')}</p>`:''}${faculty()&&program.id!=='ungrouped'?`<div class="o-card-actions">${button('Edit program',`data-program="${E(program.id)}"`)}${button('+ Add study',`data-add-study="${E(program.id)}"`)}${button('Delete program',`data-delete="programs" data-id="${E(program.id)}" data-danger`)}</div>`:''}<div class="${S.layouts.commons==='cards'?'o-grid':'o-stack'}">${shown.map(s=>{
+      return `<details class="o-program o-research-details" data-map-fold data-fold="${E(key)}" ${query||foldOpen(key)?'open':''}><summary><span class="o-research-title">${E(program.name)}</span><span class="o-research-count">${E(counts)}</span>${program.status?badge(program.status):''}</summary><div class="o-program-body">${program.description?`<p>${E(program.description)}</p>`:''}${program.research_question?`<p><span class="o-rq-label">Program RQ</span>${E(program.research_question)}</p>`:''}${members.length?`<p><span class="o-rq-label">Members across studies</span>${members.map(E).join(' · ')}</p>`:''}${faculty()&&program.id!=='ungrouped'?`<div class="o-card-actions">${button('Edit program',`data-program="${E(program.id)}"`)}${button('+ Add study',`data-add-study="${E(program.id)}"`)}${button('+ Add paper',`data-add-program-paper="${E(program.id)}"`)}${button('Delete program',`data-delete="programs" data-id="${E(program.id)}" data-danger`)}</div>`:''}<div class="${S.layouts.commons==='cards'?'o-grid':'o-stack'}">${shown.map(s=>{
         const papers=map.papers.filter(p=>p.project_id===s.id),skey='study:'+s.id;
         const info=`<p><span class="o-rq-label">Members</span>${s.member_names?.map(E).join(' · ')||'No active members assigned.'}</p><p><span class="o-rq-label">RQ</span>${E(s.research_question||'Research question to be added.')}</p><p><span class="o-rq-label">Lab-visible update</span>${E(s.lab_update||'No update shared yet.')}</p>`;
         const summary=`<span class="o-research-title">${E(s.name)}</span><span>${badge(studyStage(s))} ${badge(s.status,'blue')}</span>`;
         if(!detailed)return `<article class="o-card o-study-summary">${summary}${info}${faculty()&&row('projects',s.id)?`<div class="o-card-actions">${button('Edit study',`data-edit="projects" data-id="${E(s.id)}"`)}${button('Delete study',`data-delete="projects" data-id="${E(s.id)}" data-danger`)}</div>`:''}<h3>Papers · ${papers.length}</h3>${paperList(papers)||'<p>No papers linked yet.</p>'}</article>`;
         const own=row('projects',s.id);
         return `<details class="o-study o-research-details" data-map-fold data-fold="${E(skey)}" ${query||foldOpen(skey)?'open':''}><summary>${summary}</summary><div class="o-study-body">${info}<h3>Papers · ${papers.length}</h3>${paperList(papers)||'<p>No papers linked yet.</p>'}${own?`<div class="o-card-actions">${button(editable('projects',own)?'Edit study':'View study',`data-edit="projects" data-id="${E(s.id)}"`)}${editable('projects',own)?button('+ Add paper',`data-add-project-paper="${E(s.id)}"`):''}${faculty()?button('Delete study',`data-delete="projects" data-id="${E(s.id)}" data-danger`):''}</div>`:'<p class="o-feedback">Lab-visible summary · read-only</p>'}</div></details>`;
-      }).join('')||empty('No studies in this program yet.')}</div></div></details>`;
+      }).join('')||(direct.length?'':empty('No studies in this program yet.'))}</div>${shownDirect.length?`<section class="o-section-space"><h3>Direct papers · ${shownDirect.length}</h3>${paperList(shownDirect)}</section>`:''}</div></details>`;
     }).join('');
-    const independent=map.papers.filter(p=>!p.project_id&&match(p.title,p.status));
-    return `<section class="o-commons"><div class="o-panel-head"><div><div class="o-kicker">THE LAB AT A GLANCE</div><h2>Research map</h2></div>${layoutToggle('commons')}</div><p class="o-sub">Programs → Studies → Papers. Summaries are shared across the lab; detail access and editing stay permission-based.</p><div class="o-research-tools"><label class="o-field">Search research<input type="search" id="research-search" value="${E(S.search[S.view]||'')}" placeholder="Program, study, RQ, member, or paper"></label>${button('Expand all','data-expand-map="true"')}${button('Collapse all','data-expand-map="false"')}${detailed?select('Show','research_scope',[['ongoing','Ongoing research'],['all','Include completed research']],S.researchScope):''}</div><div class="o-research-map">${content||empty('No matching programs or studies.')}${independent.length?`<details class="o-research-details o-program" data-map-fold data-fold="independent" ${query||foldOpen('independent')?'open':''}><summary><span class="o-research-title">Independent papers</span><span>${independent.length} papers</span></summary><div class="o-program-body">${paperList(independent)}</div></details>`:''}</div></section>`;
+    const independent=map.papers.filter(p=>!p.project_id&&!p.program_id&&match(p.title,p.status));
+    return `<section class="o-commons"><div class="o-panel-head"><div><div class="o-kicker">THE LAB AT A GLANCE</div><h2>Research map</h2></div>${layoutToggle('commons')}</div><p class="o-sub">Programs → Papers, or Programs → Studies → Papers. Summaries are shared across the lab; detail access and editing stay permission-based.</p><div class="o-research-tools"><label class="o-field">Search research<input type="search" id="research-search" value="${E(S.search[S.view]||'')}" placeholder="Program, study, RQ, member, or paper"></label>${button('Expand all','data-expand-map="true"')}${button('Collapse all','data-expand-map="false"')}${detailed?select('Show','research_scope',[['ongoing','Ongoing research'],['all','Include completed research']],S.researchScope):''}</div><div class="o-research-map">${content||empty('No matching programs or studies.')}${independent.length?`<details class="o-research-details o-program" data-map-fold data-fold="independent" ${query||foldOpen('independent')?'open':''}><summary><span class="o-research-title">Independent papers</span><span>${independent.length} papers</span></summary><div class="o-program-body">${paperList(independent)}</div></details>`:''}</div></section>`;
   }
   function researchView(){
     const records=visibleRows('projects').sort((a,b)=>a.name.localeCompare(b.name));
@@ -284,7 +289,7 @@
     const r=old||{owner_id:uid(),visibility:type==='expenses'?'private':'members',...defaults},can=!old||editable(type,old),isFaculty=faculty();
     const projectMemberIds=type==='projects'?(old?S.rows.project_members.filter(m=>m.project_id===old.id).map(m=>m.member_id):[uid()]):[];
     const owner=select('Owner','owner_id',people(),r.owner_id,'required '+(isFaculty?'':'disabled'));
-    const visibility=select(type==='projects'?'Detail visibility':'Visibility','visibility',[[type==='expenses'?'private':'members',type==='expenses'?'Submitter + faculty':'Project members'],['lab','Lab-wide']],r.visibility,(type==='expenses'||isFaculty)?'':'disabled');
+    const visibility=select(type==='projects'?'Detail visibility':'Visibility','visibility',[[type==='expenses'?'private':'members',type==='expenses'?'Submitter + faculty':type==='papers'?'Owner + faculty + linked study members':'Project members'],['lab','Lab-wide']],r.visibility,(type==='expenses'||isFaculty)?'':'disabled');
     let fields='';
     if(type==='projects'){
       const statuses=['Planning','Exploring','Research design','Experiment design','Data collection','Analysis','Empirical analysis','Drafting','Revising','Manuscript revision','On hold','Completed'];
@@ -297,9 +302,11 @@
     if(type==='papers'){
       const projects=S.rows.projects.filter(p=>(!p.archived_at&&(isFaculty||inProject(p.id)))||p.id===r.project_id);
       const authors=S.rows.members.filter(m=>m.active||(r.author_member_ids||[]).includes(m.id));
-      fields=input('Paper title','title',r.title,'text','required maxlength="300"')+owner+select('Study','project_id',[['','Independent paper'],...projects.map(p=>[p.id,p.name])],r.project_id,old&&!isFaculty?'disabled':'')+
+      const programs=S.programs.filter(p=>(isFaculty&&!p.archived_at)||p.id===r.program_id);
+      const parent=r.program_id?'program:'+r.program_id:r.project_id?'study:'+r.project_id:'';
+      fields=input('Paper title','title',r.title,'text','required maxlength="300"')+owner+select('Paper belongs to','paper_parent',[['','Independent paper'],...programs.map(p=>['program:'+p.id,'Program · '+p.name+' (direct paper)']),...(r.program_id&&!programs.some(p=>p.id===r.program_id)?[['program:'+r.program_id,'Current program']]:[]),...projects.map(p=>['study:'+p.id,'Study · '+p.name])],parent,old&&!isFaculty?'disabled':'')+'<p class="o-note wide">Choose a Program to add a paper directly, choose a Study, or leave it independent. Direct papers use Owner + faculty access unless visibility is Lab-wide. Authors do not grant access.</p>'+
         `<fieldset class="o-task-assignees wide"><legend>Authors · lab members</legend><div class="o-members-list">${authors.map(m=>`<label class="o-member-check"><input type="checkbox" name="author_member_ids" value="${E(m.id)}" ${(r.author_member_ids||[]).includes(m.id)?'checked':''}>${E(m.display_name)}${m.active?'':' · inactive'}</label>`).join('')}</div></fieldset>`+textarea('External authors (one name per line)','external_authors',(r.external_authors||[]).join('\n'))+'<p class="o-note wide">Each paper has its own authors. Owner is the person responsible for the paper. This list records names, not publication author order, and does not grant access or create accounts.</p>'+
-        select('Status','status',['Draft','Working paper','Revision','Ready to submit','Submitted','Accepted','Published'],r.status||'Draft')+select('Currently with','holder',[...people(true),['journal','Journal']],r.external_holder?'journal':old?(r.current_holder_id||''):uid())+select('Next person','next_person_id',people(true),r.next_person_id)+input('Target deadline','target_date',r.target_date,'date')+visibility+select('Material handoff','handoff',['Link pending','Link provided','Shared offline'],r.handoff||'Link pending')+input('Document link (optional)','link',r.link,'url','placeholder="https://..."')+textarea('Next action','next_action',r.next_action)+'<p class="o-note wide">Title and status are shared in the lab research map. Working paper means a complete manuscript; Revision, Ready to submit, Submitted and Accepted also count as working papers. Published is counted separately. Draft does not count.</p>';
+        select('Status','status',['Draft','Working paper','Revision','Ready to submit','Submitted','Accepted','Published'],r.status||'Draft')+select('Currently with','holder',[...people(true),['journal','Journal']],r.external_holder?'journal':old?(r.current_holder_id||''):uid())+select('Next person','next_person_id',people(true),r.next_person_id)+input('Target deadline','target_date',r.target_date,'date')+visibility+select('Material handoff','handoff',['Link pending','Link provided','Shared offline'],r.handoff||'Link pending')+input('Document link (optional)','link',r.link,'url','placeholder="https://..."')+textarea('Next action','next_action',r.next_action)+'<p class="o-note wide">Title and status are shared in the lab research map. Total Papers includes every status, including Draft. Published Papers is a subset of that total. Archived research is excluded.</p>';
     }
     if(type==='expenses')fields=input('Expense','description',r.description,'text','required maxlength="300"')+owner+input('Amount (CNY)','amount',r.amount,'number','required min="0.01" step="0.01"')+select('Progress','status',['To submit','Awaiting approval','Needs documents','With finance','Paid'],r.status||'To submit',isFaculty?'':'disabled')+select('Receipt handoff','receipt_status',['Pending','Link pending','Link provided','Delivered offline'],r.receipt_status||'Pending')+visibility+input('Receipt link (optional)','receipt_link',r.receipt_link,'url','placeholder="https://..."')+input('Input tokens (optional)','input_tokens',r.input_tokens,'number','min="0" step="1"')+input('Output tokens (optional)','output_tokens',r.output_tokens,'number','min="0" step="1"')+textarea('Notes','notes',r.notes);
     if(type==='tasks'){
@@ -342,7 +349,7 @@
     const r=type==='programs'?S.programs.find(p=>p.id===id):row(type==='meetings'?'calendar_slots':type,id);
     if(!r||!faculty())return;
     const label=type==='programs'?r.name:title(type==='meetings'?'calendar_slots':type,r);
-    const children=type==='programs'?'all studies in this program and their papers':type==='projects'?'all papers linked to this study':'';
+    const children=type==='programs'?'all direct papers, all studies in this program, and their papers':type==='projects'?'all papers linked to this study':'';
     modal('Delete permanently',`<form data-form="delete"><div class="o-danger-box"><strong>${E(label)}</strong><p>This permanently deletes this record. It cannot be restored in ORBIT.</p>${children?`<p>Deleting linked records requires the additional choice below. This includes completed and archived records, even when hidden from the research map. Move any records you want to keep before continuing.</p>`:''}</div>${children?`<label class="o-delete-children"><input type="checkbox" name="delete_children" value="yes"><span>Also permanently delete ${E(children)}, including archived records. Without this choice, deletion is blocked if linked records exist.</span></label>`:''}${input('Type DELETE to confirm','confirmation','','text','required pattern="DELETE" autocomplete="off"')}${formActions('Delete permanently')}</form>`,{type,id,research,updatedAt:r.updated_at});
   }
 
@@ -350,8 +357,10 @@
     const {type,old}=context,data=new FormData(form),get=k=>String(data.get(k)??'').trim(),nullable=k=>get(k)||null;
     let payload={};const vis=faculty()?get('visibility'):(old?.visibility||'members');
     if(type==='projects')payload={name:get('name'),research_question:get('research_question'),status:get('status'),visibility:vis};
-    if(type==='papers')payload={title:get('title'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),project_id:old&&!faculty()?old.project_id:nullable('project_id'),status:get('status'),current_holder_id:get('holder')==='journal'?null:nullable('holder'),external_holder:get('holder')==='journal'?'Journal':'',next_person_id:nullable('next_person_id'),target_date:nullable('target_date'),next_action:get('next_action'),link:get('link'),handoff:get('handoff'),visibility:vis};
+    if(type==='papers')payload={title:get('title'),owner_id:faculty()?get('owner_id'):(old?.owner_id||uid()),project_id:old&&!faculty()?old.project_id:(get('paper_parent').startsWith('study:')?get('paper_parent').slice(6):null),program_id:old&&!faculty()?(old.program_id||null):(get('paper_parent').startsWith('program:')?get('paper_parent').slice(8):null),status:get('status'),current_holder_id:get('holder')==='journal'?null:nullable('holder'),external_holder:get('holder')==='journal'?'Journal':'',next_person_id:nullable('next_person_id'),target_date:nullable('target_date'),next_action:get('next_action'),link:get('link'),handoff:get('handoff'),visibility:vis};
     if(type==='papers'){
+      const parent=get('paper_parent');
+      if(parent&&!/^(program|study):.+$/.test(parent))throw new Error('Choose a valid paper location.');
       payload.author_member_ids=[...new Set(data.getAll('author_member_ids').map(String))];
       payload.external_authors=[...new Set(get('external_authors').split(/\r?\n/).map(s=>s.trim()).filter(Boolean))];
       if(payload.external_authors.length>100||payload.external_authors.some(s=>s.length>200))throw new Error('Use up to 100 external author names, each no longer than 200 characters.');
@@ -414,6 +423,7 @@
     if(b.hasAttribute('data-signout'))return signOut();
     if(!S.ready)return;
     if(b.dataset.program)return programForm(b.dataset.program);
+    if(b.dataset.addProgramPaper&&faculty()){const p=S.programs.find(p=>p.id===b.dataset.addProgramPaper);if(p&&!p.archived_at)recordForm('papers','new',{program_id:p.id});return;}
     if(b.dataset.addStudy&&faculty())return recordForm('projects','new',{program_id:b.dataset.addStudy});
     if(b.dataset.programLife&&faculty()){
       const p=S.programs.find(p=>p.id===b.dataset.programLife);if(!p)return;
