@@ -97,7 +97,7 @@
   async function fetchCommons(){
     const rows=[];
     for(let offset=0;offset<20000;offset+=1000){
-      const batch=await rpc('orbit_project_overview',{p_offset:offset});
+      const batch=await rpc('orbit_project_overview_v2',{p_offset:offset});
       if(!Array.isArray(batch))throw new Error('Project overview returned an invalid response.');
       rows.push(...batch);if(batch.length<1000)return {rows,error:''};
     }
@@ -123,7 +123,7 @@
       const [datasets,occ,directory,commons]=await Promise.all([
         Promise.all(tables.map(fetchAll)),rpc('orbit_availability_v2',{p_from:S.week,p_to:addDays(S.week,4)}),
         me.role==='faculty'?rpc('orbit_member_directory'):Promise.resolve([]),
-        fetchCommons().catch(error=>({rows:[],error:error?.code==='PGRST202'?'Lab overview needs database update 007. Your existing workspace is still available.':errorText(error)}))
+        fetchCommons().catch(error=>({rows:[],error:error?.code==='PGRST202'?'Lab overview with member names needs database update 008. Your existing workspace is still available.':errorText(error)}))
       ]);
       if(generation!==S.loading||S.session?.user.id!==userId)return;
       S.me=me;S.rows=Object.fromEntries(tables.map((t,i)=>[t,datasets[i]]));S.occupancy=occ;S.directory=directory;S.commons=commons.rows;S.commonsError=commons.error;S.ready=true;
@@ -182,7 +182,7 @@
   function layoutToggle(key){return `<div class="o-layout-toggle" role="group" aria-label="${key} display">${['cards','list'].map(mode=>button(mode==='cards'?'Cards':'List',`data-layout="${key}" data-mode="${mode}" aria-pressed="${S.layouts[key]===mode}"`)).join('')}</div>`;}
   function collection(type,records){return `<div class="o-collection ${S.layouts[type]==='list'?'o-record-list':'o-grid'}" data-collection="${type}">${records.map(r=>recordCard(type,r)).join('')}</div>`;}
   function commonsPanel(){
-    return `<section class="o-commons" aria-labelledby="commons-title"><div class="o-panel-head"><div><div class="o-kicker">THE LAB AT A GLANCE</div><h2 id="commons-title">Our ongoing questions</h2></div>${layoutToggle('commons')}</div><p class="o-sub">Across YZ Lab · project, research question, and current stage only. Read-only for everyone.</p>${S.commonsError?`<div class="o-note" role="status">${E(S.commonsError)}</div>`:S.commons.length?`<div class="o-collection ${S.layouts.commons==='list'?'o-record-list':'o-grid'}" data-collection="commons">${S.commons.map((p,i)=>`<article class="o-card o-summary-card"><div class="o-card-top"><span class="o-index">${String(i+1).padStart(2,'0')}</span>${badge(p.status)}</div><h3>${E(p.name)}</h3><p><span class="o-rq-label">RQ</span>${E(p.research_question||'Research question to be added.')}</p></article>`).join('')}</div>`:empty('No ongoing projects yet.')}</section>`;
+    return `<section class="o-commons" aria-labelledby="commons-title"><div class="o-panel-head"><div><div class="o-kicker">THE LAB AT A GLANCE</div><h2 id="commons-title">Our ongoing questions</h2></div>${layoutToggle('commons')}</div><p class="o-sub">Across YZ Lab · projects, members, research questions, and current stages. Read-only for everyone.</p>${S.commonsError?`<div class="o-note" role="status">${E(S.commonsError)}</div>`:S.commons.length?`<div class="o-collection ${S.layouts.commons==='list'?'o-record-list':'o-grid'}" data-collection="commons">${S.commons.map((p,i)=>`<article class="o-card o-summary-card"><div class="o-card-top"><span class="o-index">${String(i+1).padStart(2,'0')}</span>${badge(p.status)}</div><h3>${E(p.name)}</h3><p class="o-summary-members"><span class="o-rq-label">Members</span>${p.member_names?.length?p.member_names.map(E).join(' · '):'No active members assigned.'}</p><p><span class="o-rq-label">RQ</span>${E(p.research_question||'Research question to be added.')}</p></article>`).join('')}</div>`:empty('No ongoing projects yet.')}</section>`;
   }
   function home(){
     const papers=activeRows('papers').filter(p=>p.current_holder_id===uid());
@@ -218,7 +218,7 @@
     const owner=select('Owner','owner_id',people(),r.owner_id,'required '+(isFaculty?'':'disabled'));
     const visibility=select(type==='projects'?'Detail visibility':'Visibility','visibility',[[type==='expenses'?'private':'members',type==='expenses'?'Submitter + faculty':'Project members'],['lab','Lab-wide']],r.visibility,(type==='expenses'||isFaculty)?'':'disabled');
     let fields='';
-    if(type==='projects')fields=input('Project name','name',r.name,'text','required maxlength="200"')+select('Current status','status',['Planning','Exploring','Experiment design','Data collection','Empirical analysis','Manuscript revision','Completed'],r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+visibility+'<p class="o-note wide">Ongoing project names, research questions, and stages appear in the read-only lab overview for all active members. Detail visibility does not hide these three summary fields. Completed or archived projects leave the overview.</p>';
+    if(type==='projects')fields=input('Project name','name',r.name,'text','required maxlength="200"')+select('Current status','status',['Planning','Exploring','Experiment design','Data collection','Empirical analysis','Manuscript revision','Completed'],r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+visibility+'<p class="o-note wide">Ongoing project names, active member names, research questions, and stages appear in the read-only lab overview for all active members. Detail visibility does not hide these four summary fields. Completed or archived projects leave the overview.</p>';
     if(type==='papers'){
       const projects=S.rows.projects.filter(p=>(!p.archived_at&&(isFaculty||inProject(p.id)))||p.id===r.project_id);
       fields=input('Paper title','title',r.title,'text','required maxlength="300"')+owner+select('Project','project_id',[['','Independent paper'],...projects.map(p=>[p.id,p.name])],r.project_id,old&&!isFaculty?'disabled':'')+
