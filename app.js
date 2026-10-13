@@ -17,6 +17,7 @@
   const emptyRows=()=>Object.fromEntries(tables.map(t=>[t,[]]));
   const S={session:null,me:null,rows:emptyRows(),directory:[],occupancy:[],commons:[],commonsError:'',layouts:{papers:'cards',projects:'cards',commons:'cards'},view:'home',filter:'active',busyMode:false,loading:0,ready:false,saving:false};
   S.research=null;S.researchError='';S.programs=[];S.expanded={home:{},projects:{}};S.search={home:'',projects:''};S.researchScope='ongoing';
+  S.focus=null;S.focusError='';
   const mature=p=>['Working paper','Revision','Ready to submit','Submitted','Accepted'].includes(p.status);
   const studyStage=s=>{const papers=(S.research?.papers||[]).filter(p=>p.project_id===s.id);return papers.some(mature)?'WP':papers.some(p=>p.status==='Published')?'Published':'WIP';};
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -72,6 +73,7 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(error?.code==='PGRST202'&&/orbit_(save_)?faculty_focus/.test(error?.message||''))return 'Faculty Focus needs database update 015. Your existing workspace is still available.';
     if(['42703','PGRST204'].includes(error?.code)&&/program_id/.test(error?.message||''))return 'Direct program papers need database update 013. Install it before using this version, then refresh.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_delete_research'))return 'Deletion needs database update 012. Ask your faculty administrator to install it, then refresh. Nothing was deleted.';
     if((error?.code==='PGRST202'&&/orbit_save_study|orbit_research_map/.test(error?.message||''))||(['42703','PGRST204','42P01','PGRST205'].includes(error?.code)&&/program|lab_update/.test(error?.message||'')))return 'Research needs database update 011. Ask your faculty administrator to apply it, then refresh.';
@@ -109,7 +111,7 @@
     $('auth-error').textContent=message;
     if(!formVisible&&message)$('auth-intro').textContent+=' '+message;
   }
-  function clearWorkspace(){S.loading++;S.ready=false;S.me=null;S.rows=emptyRows();S.directory=[];S.occupancy=[];S.commons=[];S.commonsError='';S.research=null;S.researchError='';S.programs=[];S.expanded={home:{},projects:{}};S.search={home:'',projects:''};S.researchScope='ongoing';S.layouts={papers:'cards',projects:'cards',commons:'cards'};$('o-content').innerHTML='';$('main-nav').innerHTML='';$('project-nav').innerHTML='';$('user-name').textContent='';$('user-role').textContent='';$('user-avatar').textContent='';$('o-dialog-body').innerHTML='';$('o-dialog-title').textContent='';$('o-toast').textContent='';$('o-toast').hidden=true;S.saving=false;close();}
+  function clearWorkspace(){S.loading++;S.ready=false;S.me=null;S.rows=emptyRows();S.directory=[];S.occupancy=[];S.commons=[];S.commonsError='';S.research=null;S.researchError='';S.focus=null;S.focusError='';S.programs=[];S.expanded={home:{},projects:{}};S.search={home:'',projects:''};S.researchScope='ongoing';S.layouts={papers:'cards',projects:'cards',commons:'cards'};$('o-content').innerHTML='';$('main-nav').innerHTML='';$('project-nav').innerHTML='';$('user-name').textContent='';$('user-role').textContent='';$('user-avatar').textContent='';$('o-dialog-body').innerHTML='';$('o-dialog-title').textContent='';$('o-toast').textContent='';$('o-toast').hidden=true;S.saving=false;close();}
   async function fetchCommons(){
     const rows=[];
     for(let offset=0;offset<20000;offset+=1000){
@@ -136,15 +138,17 @@
       const me=unwrap(await db.from('orbit_members').select('*').eq('id',userId).maybeSingle());
       if(generation!==S.loading)return;
       if(!me?.active){clearWorkspace();S.me=me;authScreen('pending');return;}
-      const [datasets,occ,directory,commons,research]=await Promise.all([
+      const [datasets,occ,directory,commons,research,focus]=await Promise.all([
         Promise.all(tables.map(fetchAll)),rpc('orbit_availability_v2',{p_from:S.week,p_to:addDays(S.week,4)}),
         me.role==='faculty'?rpc('orbit_member_directory'):Promise.resolve([]),
         fetchCommons().catch(error=>({rows:[],error:error?.code==='PGRST202'?'Lab overview with member names needs database update 008. Your existing workspace is still available.':errorText(error)})),
-        Promise.all([rpc('orbit_research_map',{}),fetchAll('programs')]).then(([map,programs])=>{if(!map||!['programs','studies','papers'].every(k=>Array.isArray(map[k])))throw new Error('Invalid research map response.');return {map,programs,error:''};}).catch(error=>({map:null,programs:[],error:errorText(error)}))
+        Promise.all([rpc('orbit_research_map',{}),fetchAll('programs')]).then(([map,programs])=>{if(!map||!['programs','studies','papers'].every(k=>Array.isArray(map[k])))throw new Error('Invalid research map response.');return {map,programs,error:''};}).catch(error=>({map:null,programs:[],error:errorText(error)})),
+        rpc('orbit_faculty_focus',{}).then(board=>{if(!board||!Array.isArray(board.items)||!board.version)throw new Error('Invalid Faculty Focus response.');return {board,error:''};}).catch(error=>({board:null,error:errorText(error)}))
       ]);
       if(generation!==S.loading||S.session?.user.id!==userId)return;
       S.me=me;S.rows=Object.fromEntries(tables.map((t,i)=>[t,datasets[i]]));S.occupancy=occ;S.directory=directory;S.commons=commons.rows;S.commonsError=commons.error;S.ready=true;
       S.research=research.map;S.programs=research.programs;S.researchError=research.error;
+      S.focus=focus.board;S.focusError=focus.error;
       if(needPassword){authScreen('password');return;}
       $('auth-screen').hidden=true;$('workspace').hidden=false;render();
       if(!silent)toast('Workspace is up to date.');
@@ -211,8 +215,44 @@
   const foldOpen=key=>Boolean(S.expanded[S.view]?.[key]);
   function researchStats(){
     const map=S.research,ongoing=s=>s.status!=='Completed'&&(!s.program_id||map.programs.some(p=>p.id===s.program_id&&p.status!=='Completed'));
-    const stats=map?[[map.programs.filter(p=>p.status!=='Completed').length,'Research Programs'],[map.studies.filter(s=>ongoing(s)&&studyStage(s)==='WIP').length,'WIP Studies'],[map.papers.length,'Total Papers'],[map.papers.filter(p=>p.status==='Published').length,'Published Papers']]:[['—','Research Programs'],['—','WIP Studies'],['—','Total Papers'],['—','Published Papers']];
-    return `<div class="o-stat-grid o-research-stats">${stats.map(([n,label])=>`<div class="o-stat"><strong>${n}</strong><span>${label}</span></div>`).join('')}</div><p class="o-feedback">Lab-wide totals · Programs and WIP exclude completed work. Total Papers includes every status, including Draft, and papers from completed research and independent papers. Archived papers and papers under archived research are excluded. Published Papers is a subset of Total Papers.</p>`;
+    const stats=map?[[map.programs.filter(p=>p.status!=='Completed').length,'Research Programs'],[map.studies.filter(s=>ongoing(s)&&studyStage(s)==='WIP').length,'WIP Studies'],[map.papers.length,'Total Papers']]:[['—','Research Programs'],['—','WIP Studies'],['—','Total Papers']];
+    return `<div class="o-stat-grid o-research-stats">${stats.map(([n,label])=>`<div class="o-stat"><strong>${n}</strong><span>${label}</span></div>`).join('')}</div><p class="o-feedback">Lab-wide totals · Programs and WIP exclude completed work. Total Papers includes every status, including Draft and Published, and papers from completed research and independent papers. Archived papers and papers under archived research are excluded.</p>`;
+  }
+  const focusBuckets={now:'Working on now',next:'Up next'};
+  const focusKey=item=>item.entity+':'+item.id;
+  function focusPanel(){
+    const board=S.focus;
+    const updated=board?.updated_at?new Date(board.updated_at).toLocaleString('en-GB',{timeZone:'Asia/Shanghai',dateStyle:'medium',timeStyle:'short'})+' · Shanghai':'';
+    return `<section class="o-focus" aria-labelledby="focus-title"><div class="o-panel-head"><div><div class="o-kicker">WHERE MY ATTENTION IS</div><h2 id="focus-title">Faculty Focus</h2></div>${faculty()&&board&&S.research?button('Edit priorities','data-focus-edit'):''}</div><p class="o-sub">My current work and what comes next. Ordered within each list; priorities can change.</p>${S.focusError?`<p class="o-note" role="status">${E(S.focusError)}</p>`:`<div class="o-focus-columns">${Object.entries(focusBuckets).map(([bucket,label])=>{const items=board?.items.filter(i=>i.bucket===bucket)||[];return `<section class="o-focus-column"><h3><span class="o-focus-dot ${bucket}" aria-hidden="true"></span>${label}<span class="o-focus-count">${items.length}</span></h3>${items.length?`<ol class="o-focus-list">${items.map(item=>`<li><div><span class="o-rq-label">${item.entity==='papers'?'Paper':'Study'}</span><span class="o-focus-name">${E(item.title)}</span></div></li>`).join('')}</ol>`:empty(bucket==='now'?'No current priorities shared yet.':'No next priorities shared yet.')}</section>`;}).join('')}</div><p class="o-feedback">${updated?'Updated '+E(updated)+'. ':''}Visible to active lab members. This list does not change record access, ownership, or handoffs.</p>`}</section>`;
+  }
+  function focusEditor(){
+    if(!faculty()||!S.focus||!S.research)return;
+    const candidates=[...S.research.studies.map(s=>({entity:'projects',id:s.id,title:s.name})),...S.research.papers.map(p=>({entity:'papers',id:p.id,title:p.title}))].sort((a,b)=>a.title.localeCompare(b.title));
+    modal('Edit faculty priorities','',{kind:'focus',version:S.focus.version,items:S.focus.items.map(i=>({...i})),candidates});
+    drawFocusEditor();
+  }
+  function drawFocusEditor(){
+    const ctx=formContext;if(ctx?.kind!=='focus')return;
+    const available=ctx.candidates.filter(c=>!ctx.items.some(i=>focusKey(i)===focusKey(c)));
+    $('o-dialog-body').innerHTML=`<form data-form="focus"><p class="o-note">Select papers or studies for your own work queue. Names and priorities are shared with the lab; private details stay private. Removing an item here never deletes its record.</p><div class="o-focus-add">${select('Paper or study','focus_candidate',[['','Choose a paper or study…'],...available.map(c=>[focusKey(c),(c.entity==='papers'?'Paper':'Study')+' · '+c.title])],'')}${select('Place in','focus_bucket',Object.entries(focusBuckets),'now')}${button('Add to list','data-focus-add')}</div><div class="o-focus-editor-lists">${Object.entries(focusBuckets).map(([bucket,label])=>{const items=ctx.items.filter(i=>i.bucket===bucket);return `<section><h3>${label}</h3>${items.length?`<ol class="o-focus-list">${items.map((item,index)=>`<li><div><span class="o-rq-label">${item.entity==='papers'?'Paper':'Study'}</span><span class="o-focus-name">${E(item.title)}</span><div class="o-focus-controls">${button('↑',`data-focus-action="up" data-focus-key="${E(focusKey(item))}" aria-label="Move ${E(item.title)} up" ${index===0?'disabled':''}`)}${button('↓',`data-focus-action="down" data-focus-key="${E(focusKey(item))}" aria-label="Move ${E(item.title)} down" ${index===items.length-1?'disabled':''}`)}${button(bucket==='now'?'Move to next':'Move to now',`data-focus-action="switch" data-focus-key="${E(focusKey(item))}"`)}${button('Remove',`data-focus-action="remove" data-focus-key="${E(focusKey(item))}" aria-label="Remove ${E(item.title)} from priorities"`)}</div></div></li>`).join('')}</ol>`:empty('Nothing selected.')}</section>`;}).join('')}</div><p class="o-feedback">Changes are saved together. Cancel discards your edits. Archived records and records under archived research are hidden; restoring them can bring them back unless removed from this list.</p>${formActions('Save priorities')}</form>`;
+  }
+  function changeFocus(action,key){
+    if(!faculty()||formContext?.kind!=='focus'||S.saving)return;
+    const ctx=formContext,item=ctx.items.find(i=>focusKey(i)===key);
+    if(action==='add'){
+      const selected=$('o-dialog-body').querySelector('[name=focus_candidate]').value;
+      const candidate=ctx.candidates.find(c=>focusKey(c)===selected);
+      if(!candidate||ctx.items.some(i=>focusKey(i)===selected))return;
+      if(ctx.items.length>=100){$('o-dialog-body').querySelector('.o-error').textContent='Choose up to 100 priorities.';return;}
+      ctx.items.push({...candidate,bucket:$('o-dialog-body').querySelector('[name=focus_bucket]').value});
+    }else if(item){
+      if(action==='remove')ctx.items=ctx.items.filter(i=>i!==item);
+      else if(action==='switch'){ctx.items=ctx.items.filter(i=>i!==item);ctx.items.push({...item,bucket:item.bucket==='now'?'next':'now'});}
+      else{const lane=ctx.items.filter(i=>i.bucket===item.bucket),other=lane[lane.indexOf(item)+(action==='up'?-1:1)];if(other){const a=ctx.items.indexOf(item),b=ctx.items.indexOf(other);[ctx.items[a],ctx.items[b]]=[ctx.items[b],ctx.items[a]];}}
+    }
+    drawFocusEditor();
+    const buttons=[...$('o-dialog-body').querySelectorAll('[data-focus-action]')];
+    const next=buttons.find(b=>b.dataset.focusKey===key&&b.dataset.focusAction===action&&!b.disabled)||buttons.find(b=>b.dataset.focusKey===key&&!b.disabled)||$('o-dialog-body').querySelector('[name=focus_candidate]');next?.focus();
   }
   function researchPanel(detailed){
     if(!S.research)return `<section class="o-commons"><h2>Research map</h2><p class="o-note" role="status">${E(S.researchError||'Research needs database update 011.')}</p></section>`;
@@ -261,7 +301,7 @@
     const tasks=activeRows('tasks').filter(t=>!t.done&&(faculty()||t.owner_id===uid()||taskParticipant(t))).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
     const upcoming=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&!s.cancelled_at&&s.slot_date>=dateNow()).sort((a,b)=>(a.slot_date+time(startMinutes(a)/60)).localeCompare(b.slot_date+time(startMinutes(b)/60))).slice(0,2);
     return heading('ORBIT / YZ LAB',`Welcome back, ${S.me.display_name}.`,'Good taste, shared context, research in motion.',button('+ New task','data-edit="tasks" data-id="new"',true))+
-      `${researchStats()}${commonsPanel()}<div class="o-layout o-section-space"><div class="o-stack"><section><div class="o-panel-head"><h2>On your desk · ${papers.length}</h2>${layoutToggle('papers')}${button('All papers ↗','data-view="papers"')}</div><details class="o-research-details" data-fold="desk" ${foldOpen('desk')?'open':''}><summary>View papers waiting on you</summary>${papers.length?collection('papers',papers.slice(0,4)):empty('Nothing waiting on you right now.')}</details></section></div><div class="o-stack"><section><div class="o-panel-head"><h2>Next on the calendar</h2></div>${upcoming.map(meetingCard).join('')||empty('No upcoming meetings or personal schedules.')}<div class="o-section-space">${button('Open calendar →','data-view="calendar"')}</div></section><section><div class="o-panel-head"><h2>Coming up · ${tasks.length} open tasks</h2></div><div class="o-stack">${tasks.slice(0,2).map(t=>recordCard('tasks',t)).join('')||empty('All caught up.')}</div></section></div></div>`;
+      `${researchStats()}${focusPanel()}${commonsPanel()}<div class="o-layout o-section-space"><div class="o-stack"><section><div class="o-panel-head"><h2>On your desk · ${papers.length}</h2>${layoutToggle('papers')}${button('All papers ↗','data-view="papers"')}</div><details class="o-research-details" data-fold="desk" ${foldOpen('desk')?'open':''}><summary>View papers waiting on you</summary>${papers.length?collection('papers',papers.slice(0,4)):empty('Nothing waiting on you right now.')}</details></section></div><div class="o-stack"><section><div class="o-panel-head"><h2>Next on the calendar</h2></div>${upcoming.map(meetingCard).join('')||empty('No upcoming meetings or personal schedules.')}<div class="o-section-space">${button('Open calendar →','data-view="calendar"')}</div></section><section><div class="o-panel-head"><h2>Coming up · ${tasks.length} open tasks</h2></div><div class="o-stack">${tasks.slice(0,2).map(t=>recordCard('tasks',t)).join('')||empty('All caught up.')}</div></section></div></div>`;
   }
   function meetingCard(s){return `<article class="o-card"><div class="o-card-top">${badge(s.cancelled_at?'Cancelled':duration(s)+' min',s.cancelled_at?'warm':'purple')}${s.series_id?badge(repeatNames[s.repeat_rule]||'Recurring','blue'):''}</div><h3>${E(s.topic||'Busy block')}</h3><div class="o-card-meta">${E(date(s.slot_date))} · ${time(startMinutes(s)/60)}–${time((startMinutes(s)+duration(s))/60)} · ${E(person(s.owner_id))}</div><p>${E(s.location)}${s.notes?' · '+E(s.notes):''}</p>${s.series_id?`<p>Series ends ${E(s.repeat_until)} · Changes apply to this occurrence only.</p>`:''}<div class="o-card-actions">${s.cancelled_at?(faculty()?button('Delete permanently',`data-delete="meetings" data-id="${s.id}"`):''):button('Manage','data-booking="'+s.id+'"')}</div></article>`;}
   function calendar(){
@@ -391,6 +431,10 @@
     const controls=[...form.querySelectorAll('button')];controls.forEach(b=>b.disabled=true);
     await mutate(async()=>{
       if(form.dataset.form==='record')return saveRecord(form,context);
+      if(form.dataset.form==='focus'){
+        if(!faculty()||context?.kind!=='focus')throw new Error('Faculty access required.');
+        return rpc('orbit_save_faculty_focus',{p_expected_version:context.version,p_items:context.items.map(({entity,id,bucket})=>({entity,id,bucket}))});
+      }
       if(form.dataset.form==='program'){
         const payload={name:get('name'),description:get('description'),research_question:get('research_question'),status:get('status')};
         return unwrap(await (context.old?db.from('orbit_programs').update(payload).eq('id',context.old.id).eq('updated_at',context.old.updated_at):db.from('orbit_programs').insert(payload)).select('id').single());
@@ -422,6 +466,9 @@
     if(b.hasAttribute('data-close'))return close();
     if(b.hasAttribute('data-signout'))return signOut();
     if(!S.ready)return;
+    if(b.hasAttribute('data-focus-edit'))return focusEditor();
+    if(b.hasAttribute('data-focus-add'))return changeFocus('add');
+    if(b.dataset.focusAction)return changeFocus(b.dataset.focusAction,b.dataset.focusKey);
     if(b.dataset.program)return programForm(b.dataset.program);
     if(b.dataset.addProgramPaper&&faculty()){const p=S.programs.find(p=>p.id===b.dataset.addProgramPaper);if(p&&!p.archived_at)recordForm('papers','new',{program_id:p.id});return;}
     if(b.dataset.addStudy&&faculty())return recordForm('projects','new',{program_id:b.dataset.addStudy});

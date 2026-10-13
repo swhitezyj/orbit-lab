@@ -503,7 +503,7 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 @media(max-width:560px){#orbit-lab .o-side-institution{flex-wrap:wrap}#orbit-lab .o-side-institution span{font-size:14px}}
 
 /* Research map: disclosure before detail, shared summaries before private work. */
-#orbit-lab .o-research-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+#orbit-lab .o-research-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
 #orbit-lab .o-research-details{border:1px solid var(--o-border);border-radius:5px;min-width:0;background:var(--o-panel);overflow-wrap:anywhere}
 #orbit-lab .o-research-details>summary{cursor:pointer;padding:20px;list-style:revert;font-size:17px;line-height:1.6;min-height:56px}
 #orbit-lab .o-research-details>summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}
@@ -528,3 +528,25 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 /* Explicit confirmation for research deletion. */
 .o-delete-children{display:flex;align-items:flex-start;gap:12px;margin:18px 0;font-size:16px;line-height:1.5}
 .o-delete-children input{width:20px;min-width:20px;height:20px;margin-top:3px;accent-color:#981e32}
+
+/* Faculty Focus: an editorial work queue, using the existing theme. */
+#orbit-lab .o-focus{margin:32px 0;padding:26px 0;border-top:1px solid var(--o-border);border-bottom:1px solid var(--o-border)}
+#orbit-lab .o-focus-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;margin-top:22px}
+#orbit-lab .o-focus-column{min-width:0;padding:22px;border:1px solid var(--o-border);border-radius:5px;background:var(--o-panel)}
+#orbit-lab .o-focus-column h3{display:flex;align-items:center;gap:10px;margin:0 0 18px;font-family:var(--o-serif);font-size:28px}
+#orbit-lab .o-focus-dot{width:9px;height:9px;border-radius:50%;background:var(--o-purple);flex-shrink:0}
+#orbit-lab .o-focus-dot.now{background:#cd7085}
+#orbit-lab .o-focus-count{margin-left:auto;font:18px "ORBIT Source Sans",sans-serif;color:var(--o-muted)}
+#orbit-lab .o-focus-list{padding-left:28px;margin:0}
+#orbit-lab .o-focus-list li{padding:14px 0 14px 8px;border-bottom:1px solid var(--o-border);overflow-wrap:anywhere}
+#orbit-lab .o-focus-list li:last-child{border-bottom:0}
+#orbit-lab .o-focus-list li::marker{font:italic 23px var(--o-serif);color:var(--o-purple)}
+#orbit-lab .o-focus-name{font-size:19px;line-height:1.5;color:var(--o-text)}
+#orbit-lab .o-focus .o-rq-label{font-size:14px}
+#orbit-lab .o-focus-add{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,180px);gap:14px;margin:22px 0}
+#orbit-lab .o-focus-add>.o-btn{justify-self:start}
+#orbit-lab .o-focus-editor-lists{display:grid;gap:24px;margin-bottom:22px}
+#orbit-lab .o-focus-editor-lists h3{font:28px var(--o-serif);margin:0 0 8px}
+#orbit-lab .o-focus-controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+#orbit-lab .o-focus-controls .o-btn{min-height:40px}
+@media(max-width:700px){#orbit-lab .o-focus-columns{grid-template-columns:1fr;gap:16px}#orbit-lab .o-focus-column{padding:18px}#orbit-lab .o-focus-add{grid-template-columns:minmax(0,1fr)}#orbit-lab .o-research-stats{grid-template-columns:1fr}}
