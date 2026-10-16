@@ -596,3 +596,12 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 #orbit-lab .wb-error:not(:empty){padding:12px 0}
 @media(max-width:800px){#orbit-lab .wb-columns{grid-template-columns:minmax(0,1fr);gap:0}#orbit-lab .wb-header{display:block}#orbit-lab .wb-header .o-card-actions{margin-top:14px}#orbit-lab .wb-brief{padding:16px}#orbit-lab .wb-shell h2{font-size:30px}}
 @media(max-width:480px){#orbit-lab .wb-move-form{grid-template-columns:minmax(0,1fr)}#orbit-lab .wb-entry-actions .o-btn{min-height:42px}#orbit-lab .wb-entry-foot{display:block}#orbit-lab .wb-entry-actions{margin-top:10px}}
+
+/* Study-level team management: membership and lead authority are distinct. */
+#orbit-lab .o-team-list{display:grid;gap:0;margin:22px 0}
+#orbit-lab .o-team-row{display:grid;grid-template-columns:minmax(0,1fr) 115px 130px;gap:14px;align-items:center;padding:18px 0;border-bottom:1px solid var(--o-border);font-size:17px}
+#orbit-lab .o-team-row>span{overflow-wrap:anywhere}
+#orbit-lab .o-team-row .o-member-check{margin:0;min-height:40px;font-size:16px}
+#orbit-lab #team-impact{white-space:pre-wrap;line-height:1.7}
+#orbit-lab .wb-header .o-card-actions{flex-shrink:1;justify-content:flex-end}
+@media(max-width:580px){#orbit-lab .o-team-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#orbit-lab .o-team-row>span:first-child{grid-column:1/-1}#orbit-lab .wb-header .o-card-actions{justify-content:flex-start}}

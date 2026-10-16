@@ -74,6 +74,7 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(error?.code==='PGRST202'&&/orbit_(save_)?study_team/.test(error?.message||''))return 'Study leads need database update 018. Existing record details are still available.';
     if(error?.code==='PGRST202'&&/orbit_(workbench|save_workbench|block_time)/.test(error?.message||''))return 'Research workbench and time ranges need database update 017. Existing records are still available.';
     if(error?.code==='PGRST202'&&/orbit_(save_)?faculty_focus/.test(error?.message||''))return 'Faculty Focus needs database update 015. Your existing workspace is still available.';
     if(['42703','PGRST204'].includes(error?.code)&&/program_id/.test(error?.message||''))return 'Direct program papers need database update 013. Install it before using this version, then refresh.';
@@ -341,9 +342,9 @@
       const statuses=['Planning','Exploring','Research design','Experiment design','Data collection','Analysis','Empirical analysis','Drafting','Revising','Manuscript revision','On hold','Completed'];
       if(r.status&&!statuses.includes(r.status))statuses.push(r.status);
       const candidates=S.rows.members.filter(m=>m.active||projectMemberIds.includes(m.id));
-      fields=input('Study name','name',r.name,'text','required maxlength="200"')+select('Research program','program_id',[['','Ungrouped studies'],...S.programs.filter(p=>!p.archived_at||p.id===r.program_id).map(p=>[p.id,p.name+(p.archived_at?' · archived':'')])],r.program_id,isFaculty?'':'disabled')+select('Current progress','status',statuses,r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+input('Lab-visible update','lab_update',r.lab_update,'text','maxlength="1000" placeholder="One sentence on current progress"')+visibility+
-        (isFaculty?`<fieldset class="o-task-assignees wide"><legend>Project members</legend><div class="o-members-list">${candidates.map(m=>`<label class="o-member-check"><input type="checkbox" name="project_member_ids" value="${E(m.id)}" ${projectMemberIds.includes(m.id)?'checked':''}>${E(m.display_name)} · ${E(m.role)}${m.active?'':' · inactive'}</label>`).join('')}</div></fieldset><p class="o-note wide">Member changes are saved with the project when you click Save changes. Faculty always retains access.</p>`:`<p class="o-note wide">Project members: ${projectMemberIds.map(id=>E(person(id))).join(' · ')||'None assigned'}. Only faculty can change membership.</p>`)+
-        '<p class="o-note wide">WIP / WP / Published is derived from linked, unarchived papers, independently of progress. Drafting can still be WIP. Set a finished manuscript to Working paper; submission belongs to the paper. Existing legacy progress labels are preserved.</p><p class="o-note wide">Study name, active member names, RQ, progress, lab-visible update, and linked paper titles/statuses are visible to all active members. Links, authors, and handoff details keep their existing access rules. Completed studies appear under Include completed research; archived studies leave the map. Only faculty can assign a research program.</p>';
+      fields=input('Study name','name',r.name,'text','required maxlength="200"')+select('Research program','program_id',[['','Ungrouped studies'],...S.programs.filter(p=>!p.archived_at||p.id===r.program_id).map(p=>[p.id,p.name+(p.archived_at?' · archived':'')])],r.program_id)+select('Current progress','status',statuses,r.status||'Exploring')+textarea('Research question','research_question',r.research_question)+input('Lab-visible update','lab_update',r.lab_update,'text','maxlength="1000" placeholder="One sentence on current progress"')+visibility+
+        (isFaculty?`<fieldset class="o-task-assignees wide"><legend>Project members</legend><div class="o-members-list">${candidates.map(m=>`<label class="o-member-check"><input type="checkbox" name="project_member_ids" value="${E(m.id)}" ${projectMemberIds.includes(m.id)?'checked':''}>${E(m.display_name)} · ${E(m.role)}${m.active?'':' · inactive'}</label>`).join('')}</div></fieldset><p class="o-note wide">Member changes are saved with the project. Removing a member also removes their study-lead designation. Use Members & leads in the workbench to appoint leads. Faculty always retains access.</p>`:`<p class="o-note wide">Project members: ${projectMemberIds.map(id=>E(person(id))).join(' · ')||'None assigned'}. Study leads can manage membership and appoint additional leads through Members & leads in the workbench.${!old?' You become the lead of the study you create.':''}</p>`)+
+        '<p class="o-note wide">WIP / WP / Published is derived from linked, unarchived papers, independently of progress. Drafting can still be WIP. Set a finished manuscript to Working paper; submission belongs to the paper. Existing legacy progress labels are preserved.</p><p class="o-note wide">Study name, active member names, RQ, progress, lab-visible update, and linked paper titles/statuses are visible to all active members. Links, authors, and handoff details keep their existing access rules. Any study member can choose an unarchived research program or Ungrouped studies. Moving a study does not change its members, visibility, or linked papers.</p>';
     }
     if(type==='papers'){
       const projects=S.rows.projects.filter(p=>(!p.archived_at&&(isFaculty||inProject(p.id)))||p.id===r.project_id);
@@ -388,7 +389,34 @@
     const dates=repeatDates(from,end.value,rule);
     preview.innerHTML=(dates.length?`<strong>${dates.length} meeting${dates.length===1?'':'s'} · through ${E(end.value)} (inclusive)</strong><details><summary>Review all dates</summary><ul>${dates.map(d=>`<li>${E(d)} · ${time(mins/60)}–${time((mins+length)/60)}</li>`).join('')}</ul></details>`:'Choose an end date to preview the meetings.')+`<p>All occurrences must be available; any conflict stops the whole series.${rule==='monthly'?' Same calendar date each month. Weekends and nonexistent dates are skipped, never shifted.':''}</p>`;
   }
-  function projectMembers(id){if(!project(id)||!faculty())return;recordForm('projects',id);$('o-dialog-body').querySelector('[name=project_member_ids]')?.focus();}
+  async function projectMembers(id){
+    if(!project(id))return;
+    const context={kind:'study-team',id,user:uid(),team:null};
+    modal('Members & leads',`<p class="o-note">Loading study membership…</p><div class="o-error" role="alert"></div>`,context);
+    try{
+      const team=await rpc('orbit_study_team',{p_id:id});
+      if(formContext!==context||uid()!==context.user)return;
+      if(!team?.version||!Array.isArray(team.member_ids)||!Array.isArray(team.lead_ids))throw new Error('Invalid study team response.');
+      context.team=team;const can=team.can_manage;
+      const candidates=S.rows.members.filter(m=>can?m.active||team.member_ids.includes(m.id):team.member_ids.includes(m.id));
+      $('o-dialog-body').innerHTML=`<form data-form="study-team"><h3>${E(project(id).name)}</h3><p class="o-note">${can?'Leads can add/remove ordinary members and appoint additional leads. Only faculty can remove or demote existing leads.':'Read-only. Study leads and faculty manage this team.'} Faculty always has full access.</p>${!team.lead_ids.length?'<p class="o-note">No student lead assigned yet. Faculty can choose one or more leads below.</p>':''}<div class="o-team-list">${candidates.map(m=>{
+        const member=team.member_ids.includes(m.id),lead=team.lead_ids.includes(m.id),protectedLead=lead&&!faculty();
+        return `<div class="o-team-row" data-team-person="${E(m.id)}"><span>${E(m.display_name)}${m.active?'':' · inactive'}${m.role==='faculty'?' · Faculty':''}</span><label class="o-member-check"><input type="checkbox" name="team_member" value="${E(m.id)}" ${member?'checked':''} ${!can||protectedLead?'disabled':''}>Member</label>${m.role==='student'?`<label class="o-member-check"><input type="checkbox" name="team_lead" value="${E(m.id)}" ${lead?'checked':''} ${!can||protectedLead||(!m.active&&!lead)?'disabled':''}>Study lead</label>`:'<span class="o-muted">Full access</span>'}</div>`;
+      }).join('')}</div><p class="o-note">Adding a member grants access to this study and its linked private papers, including their workbenches. Removing a member removes membership-based access; separate Paper ownership or Lab-wide visibility may still allow access. Appointing a lead also allows them to manage this team and appoint more leads.</p><p class="o-feedback" id="team-impact" aria-live="polite"></p>${can?formActions('Save members & leads'):button('Close','data-close')}</form>`;
+      teamImpact();
+    }catch(error){if(formContext===context)$('o-dialog-body').innerHTML=`<p class="o-note">${E(errorText(error))}</p>${button('Close','data-close')}`;}
+  }
+  function teamValues(form){
+    // Disabled existing-lead boxes are deliberately included; backend checks
+    // protect the same invariant even if a caller bypasses this UI.
+    return {members:[...form.querySelectorAll('[name=team_member]')].filter(x=>x.checked).map(x=>x.value),leads:[...form.querySelectorAll('[name=team_lead]')].filter(x=>x.checked).map(x=>x.value)};
+  }
+  function teamImpact(){
+    if(formContext?.kind!=='study-team'||!formContext.team)return;
+    const form=$('o-dialog-body').querySelector('form'),v=teamValues(form),old=formContext.team;
+    const added=v.members.filter(id=>!old.member_ids.includes(id)),removed=old.member_ids.filter(id=>!v.members.includes(id)),promoted=v.leads.filter(id=>!old.lead_ids.includes(id)),demoted=old.lead_ids.filter(id=>!v.leads.includes(id));
+    $('team-impact').textContent=[added.length?'Add members: '+added.map(person).join(', '):'',removed.length?'Remove members: '+removed.map(person).join(', '):'',promoted.length?'Appoint leads: '+promoted.map(person).join(', '):'',demoted.length?'Remove lead role: '+demoted.map(person).join(', '):''].filter(Boolean).join(' · ')||'No changes selected.';
+  }
   function account(){modal('My account',`<p class="o-sub">${E(S.session.user.email)}</p><form data-form="profile"><div class="o-fields">${input('Display name','display_name',S.me.display_name,'text','required maxlength="100"')}</div>${formActions('Save name')}</form><div class="o-section-space">${button('Change password','data-change-password')}</div>`);}
   function deleteDialog(type,id){
     const research=['programs','projects','papers'].includes(type);
@@ -420,7 +448,7 @@
     for(const key of ['link','receipt_link'])if(payload[key]&&!safeURL(payload[key]))throw new Error('Use an http or https link.');
     if((payload.handoff==='Link provided'&&!payload.link)||(payload.receipt_status==='Link provided'&&!payload.receipt_link))throw new Error('Add the link, or choose an offline/pending handoff.');
     if(type==='projects'){
-      await rpc('orbit_save_study',{p_id:old?.id||null,p_expected_updated_at:old?.updated_at||null,p_expected_member_ids:old?context.projectMemberIds:null,p_name:payload.name,p_rq:payload.research_question,p_status:payload.status,p_visibility:payload.visibility,p_member_ids:faculty()?[...new Set(data.getAll('project_member_ids').map(String))]:null,p_program_id:faculty()?nullable('program_id'):(old?.program_id||null),p_lab_update:get('lab_update')});return;
+      await rpc('orbit_save_study',{p_id:old?.id||null,p_expected_updated_at:old?.updated_at||null,p_expected_member_ids:old?context.projectMemberIds:null,p_name:payload.name,p_rq:payload.research_question,p_status:payload.status,p_visibility:payload.visibility,p_member_ids:faculty()?[...new Set(data.getAll('project_member_ids').map(String))]:null,p_program_id:nullable('program_id'),p_lab_update:get('lab_update')});return;
     }
     if(old){unwrap(await db.from('orbit_'+type).update(payload).eq('id',old.id).eq('updated_at',old.updated_at).select('id').single());}
     else if(type==='projects'){await rpc('orbit_create_project',{p_name:payload.name,p_rq:payload.research_question,p_status:payload.status,p_visibility:payload.visibility});}
@@ -438,6 +466,11 @@
     const controls=[...form.querySelectorAll('button')];controls.forEach(b=>b.disabled=true);
     await mutate(async()=>{
       if(form.dataset.form==='record')return saveRecord(form,context);
+      if(form.dataset.form==='study-team'){
+        if(context?.kind!=='study-team'||!context.team?.can_manage)throw new Error('Study lead access required.');
+        const values=teamValues(form);
+        return rpc('orbit_save_study_team',{p_id:context.id,p_expected_version:context.team.version,p_member_ids:values.members,p_lead_ids:values.leads});
+      }
       if(form.dataset.form==='focus'){
         if(!faculty()||context?.kind!=='focus')throw new Error('Faculty access required.');
         return rpc('orbit_save_faculty_focus',{p_expected_version:context.version,p_items:context.items.map(({entity,id,bucket})=>({entity,id,bucket}))});
@@ -525,6 +558,12 @@
     if(b.dataset.confirmMember)return mutate(()=>rpc('orbit_set_student_active',{p_id:b.dataset.confirmMember,p_active:b.dataset.active==='true'}),'Membership updated.');
   });
   root.addEventListener('change',event=>{
+    if(event.target.matches('[name=team_member],[name=team_lead]')){
+      const field=event.target,group=field.closest('[data-team-person]'),member=group.querySelector('[name=team_member]'),lead=group.querySelector('[name=team_lead]');
+      if(field.name==='team_lead'&&field.checked)member.checked=true;
+      if(field.name==='team_member'&&!field.checked&&lead&&!lead.disabled)lead.checked=false;
+      teamImpact();return;
+    }
     const el=event.target;if(el.closest('form[data-form="booking"]'))bookingSummary(el.closest('form'));
     if(el.name==='research_scope'){S.researchScope=el.value;render();}
   });
@@ -564,7 +603,7 @@
   let workbench;
   try{
     if(typeof window.ORBIT_WORKBENCH!=='function')throw new Error('The workbench script could not load. Upload workbench.js with this update, then hard-refresh the page.');
-    workbench=window.ORBIT_WORKBENCH({S,E,button,modal,rpc,row,person,date,faculty,input,select,textarea,external,dateNow,errorText,render,recordForm,mutate,formActions,time,startMinutes,duration,context:()=>formContext});
+    workbench=window.ORBIT_WORKBENCH({S,E,button,modal,rpc,row,person,date,faculty,input,select,textarea,external,dateNow,errorText,render,recordForm,mutate,formActions,time,startMinutes,duration,projectMembers,context:()=>formContext});
     if(!window.supabase?.createClient)throw new Error('The sign-in library could not load. Check access to cdn.jsdelivr.net and reload this page.');
     // Sessions persist within this tab only. No passwords or research records
     // are stored in localStorage, and the preview widget bridge is not used.

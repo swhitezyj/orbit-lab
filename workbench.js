@@ -59,7 +59,7 @@ window.ORBIT_WORKBENCH = function(A){
     const papers=isStudy?(S.research?.papers||[]).filter(p=>p.project_id===c.id):[];
     const removed=d.entries.filter(x=>x.deleted_at).sort((a,b)=>b.deleted_at.localeCompare(a.deleted_at));
     const briefEditable=can&&!inherited;
-    el().innerHTML=`<div class="wb-shell"><header class="wb-header"><div><div class="o-kicker">${isStudy?'A QUESTION TAKING SHAPE':'A PAPER IN MOTION'}</div><h2>${E(isStudy?r.name:r.title)}</h2><div class="o-card-top"><span class="o-badge">${E(r.status)}</span><span class="o-muted">${can?'Shared editing · record members':'Read-only · existing record access'}</span></div></div><div class="o-card-actions">${action('Record details','metadata')}${action('Reload','reload')}</div></header>
+    el().innerHTML=`<div class="wb-shell"><header class="wb-header"><div><div class="o-kicker">${isStudy?'A QUESTION TAKING SHAPE':'A PAPER IN MOTION'}</div><h2>${E(isStudy?r.name:r.title)}</h2><div class="o-card-top"><span class="o-badge">${E(r.status)}</span><span class="o-muted">${can?'Shared editing · record members':'Read-only · existing record access'}</span></div></div><div class="o-card-actions">${action('Record details','metadata')}${isStudy?action('Members & leads','team'):''}${action('Reload','reload')}</div></header>
       ${!isStudy?`<div class="o-handoff">With <strong>${E(r.external_holder||person(r.current_holder_id))}</strong> → Next <strong>${E(person(r.next_person_id))}</strong><span> · ${E(date(r.target_date))}</span></div>`:''}
       <section class="wb-brief"><div class="o-panel-head"><h3>Research brief</h3>${briefEditable?action(c.editBrief?'Cancel':'Edit brief','brief'):''}</div>${study?`<p><span class="o-rq-label">Research question</span>${E(study.research_question||'Still taking shape.')}</p>`:''}
       ${isStudy?`<p class="o-muted">Members · ${S.rows.project_members.filter(m=>m.project_id===c.id).map(m=>E(person(m.member_id))).join(' · ')||'Faculty only'}</p>`:''}
@@ -112,6 +112,7 @@ window.ORBIT_WORKBENCH = function(A){
     if(act==='unblock')return A.mutate(()=>rpc('orbit_cancel_slot',{p_id:b.dataset.id}),'Entire busy block reopened.');
     if(c?.kind!=='workbench')return;
     if(act==='metadata')return A.recordForm(c.type,c.id);
+    if(act==='team'&&c.type==='projects')return A.projectMembers(c.id);
     if(act==='reload')return open(c.type,c.id);
     if(act==='open')return open(b.dataset.entity,b.dataset.id);
     if(!c.data?.editable)return;

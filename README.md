@@ -8,12 +8,30 @@ Private research-group workspace. Static GitHub Pages frontend with Supabase
 Authentication and database-enforced authorization. Public source code is not
 the research database. No file uploads: use links or offline handoffs.
 
-## Research workbench update · 2026-10-16
+## Study team permissions · 018 · 2026-10-16
 
-Install `017_research_workbench.sql` in the existing Supabase project before
-uploading this web update. Do not rerun the original setup migrations or create
-a replacement database. The separately supplied UPDATE-GUIDE explains rollout,
-permissions, storage, and verification. 017 does not reset existing records.
+After installing 017, run the separately supplied `018_study_leads.sql` once,
+then upload this web update. Existing members and records are preserved.
+
+- Any Study member can move that Study to an existing, unarchived Program,
+  or Ungrouped, through **Record details → Research program**.
+- Open a Study → **Members & leads** to view its team. Faculty and Study leads
+  can add/remove ordinary members and appoint additional active student leads.
+- Only Faculty can remove or demote an existing lead. Leads have no extra
+  permissions outside their own Study and cannot create/edit Programs.
+- Student-created Studies automatically make the creator a lead. Existing
+  Studies require Faculty to assign their initial leads; there is no backfill.
+- Team changes use a version check to prevent overwriting concurrent changes.
+  Archived Studies and Studies under archived Programs are read-only here.
+- Moving a Study does not change membership, visibility or Paper associations.
+  Adding a member grants membership-based access to linked private Papers.
+  Removing a member does not revoke separate Paper ownership or lab-wide access.
+
+## Research workbench · 017
+
+This update retains the installed 017 workbench. Do not rerun 017 or the original
+setup migrations. The separately supplied UPDATE-GUIDE explains rollout,
+permissions, storage, and verification. Neither update resets existing records.
 
 - Open a Study or Paper to see its research workbench; use **Record details**
   for names, status, membership, authors and handoff fields.
