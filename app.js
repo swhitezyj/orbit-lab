@@ -18,6 +18,7 @@
   const S={session:null,me:null,rows:emptyRows(),directory:[],occupancy:[],commons:[],commonsError:'',layouts:{papers:'cards',projects:'cards',commons:'cards'},view:'home',filter:'active',busyMode:false,loading:0,ready:false,saving:false};
   S.research=null;S.researchError='';S.programs=[];S.expanded={home:{},projects:{}};S.search={home:'',projects:''};S.researchScope='ongoing';
   S.focus=null;S.focusError='';
+  S.workbenchMap=null;S.workbenchError='';
   const mature=p=>['Working paper','Revision','Ready to submit','Submitted','Accepted'].includes(p.status);
   const studyStage=s=>{const papers=(S.research?.papers||[]).filter(p=>p.project_id===s.id);return papers.some(mature)?'WP':papers.some(p=>p.status==='Published')?'Published':'WIP';};
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -73,6 +74,7 @@
   let db, authMode='login', needPassword=['recovery','invite'].includes(new URLSearchParams(location.hash.slice(1)).get('type'));
   let lastFocus, toastTimer, formContext=null;
   function errorText(error){
+    if(error?.code==='PGRST202'&&/orbit_(workbench|save_workbench|block_time)/.test(error?.message||''))return 'Research workbench and time ranges need database update 017. Existing records are still available.';
     if(error?.code==='PGRST202'&&/orbit_(save_)?faculty_focus/.test(error?.message||''))return 'Faculty Focus needs database update 015. Your existing workspace is still available.';
     if(['42703','PGRST204'].includes(error?.code)&&/program_id/.test(error?.message||''))return 'Direct program papers need database update 013. Install it before using this version, then refresh.';
     if(error?.code==='PGRST202'&&error?.message?.includes('orbit_delete_research'))return 'Deletion needs database update 012. Ask your faculty administrator to install it, then refresh. Nothing was deleted.';
@@ -93,7 +95,7 @@
   const rpc=async(name,args)=>unwrap(await db.rpc(name,args));
   function toast(text){$('o-toast').textContent=text;$('o-toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('o-toast').hidden=true,5000);}
   function close(){if(S.saving)return;$('o-overlay').hidden=true;$('workspace').inert=false;$('auth-screen').inert=false;formContext=null;if(lastFocus?.isConnected)lastFocus.focus();}
-  function modal(name,html,context=null){lastFocus=document.activeElement;formContext=context;$('o-dialog-title').textContent=name;$('o-dialog-body').innerHTML=html;$('o-overlay').hidden=false;$('workspace').inert=true;$('auth-screen').inert=true;$('o-overlay').querySelector('[data-close]').focus();}
+  function modal(name,html,context=null){lastFocus=document.activeElement;formContext=context;$('o-overlay').querySelector('.o-dialog').classList.toggle('o-workbench-dialog',context?.kind==='workbench');$('o-dialog-title').textContent=name;$('o-dialog-body').innerHTML=html;$('o-overlay').hidden=false;$('workspace').inert=true;$('auth-screen').inert=true;$('o-overlay').querySelector('[data-close]').focus();}
   function authScreen(mode='login',message=''){
     authMode=mode;$('workspace').hidden=true;$('auth-screen').hidden=false;
     $('auth-title').textContent={login:'Sign in',reset:'Reset your password',password:'Set your password',pending:'Membership pending',error:'Unable to load workspace'}[mode];
@@ -138,17 +140,19 @@
       const me=unwrap(await db.from('orbit_members').select('*').eq('id',userId).maybeSingle());
       if(generation!==S.loading)return;
       if(!me?.active){clearWorkspace();S.me=me;authScreen('pending');return;}
-      const [datasets,occ,directory,commons,research,focus]=await Promise.all([
+      const [datasets,occ,directory,commons,research,focus,workbenchSummary]=await Promise.all([
         Promise.all(tables.map(fetchAll)),rpc('orbit_availability_v2',{p_from:S.week,p_to:addDays(S.week,4)}),
         me.role==='faculty'?rpc('orbit_member_directory'):Promise.resolve([]),
         fetchCommons().catch(error=>({rows:[],error:error?.code==='PGRST202'?'Lab overview with member names needs database update 008. Your existing workspace is still available.':errorText(error)})),
         Promise.all([rpc('orbit_research_map',{}),fetchAll('programs')]).then(([map,programs])=>{if(!map||!['programs','studies','papers'].every(k=>Array.isArray(map[k])))throw new Error('Invalid research map response.');return {map,programs,error:''};}).catch(error=>({map:null,programs:[],error:errorText(error)})),
-        rpc('orbit_faculty_focus',{}).then(board=>{if(!board||!Array.isArray(board.items)||!board.version)throw new Error('Invalid Faculty Focus response.');return {board,error:''};}).catch(error=>({board:null,error:errorText(error)}))
+        rpc('orbit_faculty_focus',{}).then(board=>{if(!board||!Array.isArray(board.items)||!board.version)throw new Error('Invalid Faculty Focus response.');return {board,error:''};}).catch(error=>({board:null,error:errorText(error)})),
+        rpc('orbit_workbench_map',{}).then(map=>{if(!map||!Array.isArray(map.briefs)||!Array.isArray(map.connections))throw new Error('Invalid workbench summary.');return {map,error:''};}).catch(error=>({map:null,error:errorText(error)}))
       ]);
       if(generation!==S.loading||S.session?.user.id!==userId)return;
       S.me=me;S.rows=Object.fromEntries(tables.map((t,i)=>[t,datasets[i]]));S.occupancy=occ;S.directory=directory;S.commons=commons.rows;S.commonsError=commons.error;S.ready=true;
       S.research=research.map;S.programs=research.programs;S.researchError=research.error;
       S.focus=focus.board;S.focusError=focus.error;
+      S.workbenchMap=workbenchSummary.map;S.workbenchError=workbenchSummary.error;
       if(needPassword){authScreen('password');return;}
       $('auth-screen').hidden=true;$('workspace').hidden=false;render();
       if(!silent)toast('Workspace is up to date.');
@@ -159,7 +163,7 @@
     // signOut already cleared the screen; a queued duplicate callback must not
     // erase a password the user has started typing for their next sign-in.
     if(!session&&!previousId&&!S.ready&&event==='SIGNED_OUT'&&authMode==='login')return;
-    if(!session){clearWorkspace();needPassword=false;authScreen();return;}
+    if(!session){S.workbenchMap=null;S.workbenchError='';clearWorkspace();needPassword=false;authScreen();return;}
     if(event==='PASSWORD_RECOVERY')needPassword=true;
     if(needPassword){clearWorkspace();authScreen('password');return;}
     if(previousId===session.user.id&&S.ready&&['SIGNED_IN','TOKEN_REFRESHED'].includes(event))return;
@@ -167,7 +171,7 @@
   }
   async function signOut(){
     // Clear private DOM immediately, even if the remote sign-out request fails.
-    clearWorkspace();S.view='home';S.session=null;needPassword=false;authScreen();
+    S.workbenchMap=null;S.workbenchError='';clearWorkspace();S.view='home';S.session=null;needPassword=false;authScreen();
     const result=await db.auth.signOut({scope:'local'});if(result.error)toast('Workspace closed. Sign-out could not be confirmed; close this tab to clear its session.');
   }
   function lifecycle(type,r){
@@ -275,7 +279,7 @@
       const key='program:'+program.id;
       return `<details class="o-program o-research-details" data-map-fold data-fold="${E(key)}" ${query||foldOpen(key)?'open':''}><summary><span class="o-research-title">${E(program.name)}</span><span class="o-research-count">${E(counts)}</span>${program.status?badge(program.status):''}</summary><div class="o-program-body">${program.description?`<p>${E(program.description)}</p>`:''}${program.research_question?`<p><span class="o-rq-label">Program RQ</span>${E(program.research_question)}</p>`:''}${members.length?`<p><span class="o-rq-label">Members across studies</span>${members.map(E).join(' · ')}</p>`:''}${faculty()&&program.id!=='ungrouped'?`<div class="o-card-actions">${button('Edit program',`data-program="${E(program.id)}"`)}${button('+ Add study',`data-add-study="${E(program.id)}"`)}${button('+ Add paper',`data-add-program-paper="${E(program.id)}"`)}${button('Delete program',`data-delete="programs" data-id="${E(program.id)}" data-danger`)}</div>`:''}<div class="${S.layouts.commons==='cards'?'o-grid':'o-stack'}">${shown.map(s=>{
         const papers=map.papers.filter(p=>p.project_id===s.id),skey='study:'+s.id;
-        const info=`<p><span class="o-rq-label">Members</span>${s.member_names?.map(E).join(' · ')||'No active members assigned.'}</p><p><span class="o-rq-label">RQ</span>${E(s.research_question||'Research question to be added.')}</p><p><span class="o-rq-label">Lab-visible update</span>${E(s.lab_update||'No update shared yet.')}</p>`;
+        const info=`<p><span class="o-rq-label">Members</span>${s.member_names?.map(E).join(' · ')||'No active members assigned.'}</p><p><span class="o-rq-label">RQ</span>${E(s.research_question||'Research question to be added.')}</p><p><span class="o-rq-label">Lab-visible update</span>${E(s.lab_update||'No update shared yet.')}</p>${workbench.summary(s.id)}`;
         const summary=`<span class="o-research-title">${E(s.name)}</span><span>${badge(studyStage(s))} ${badge(s.status,'blue')}</span>`;
         if(!detailed)return `<article class="o-card o-study-summary">${summary}${info}${faculty()&&row('projects',s.id)?`<div class="o-card-actions">${button('Edit study',`data-edit="projects" data-id="${E(s.id)}"`)}${button('Delete study',`data-delete="projects" data-id="${E(s.id)}" data-danger`)}</div>`:''}<h3>Papers · ${papers.length}</h3>${paperList(papers)||'<p>No papers linked yet.</p>'}</article>`;
         const own=row('projects',s.id);
@@ -307,7 +311,7 @@
   function calendar(){
     const days=Array.from({length:5},(_,i)=>addDays(S.week,i));
     const records=S.rows.calendar_slots.filter(s=>s.kind==='meeting'&&(S.filter==='archived'?!!s.cancelled_at:!s.cancelled_at)&&days.includes(s.slot_date));
-    return heading('MAKE TIME FOR GOOD QUESTIONS.','Meeting Calendar','Monday–Friday · 09:00–17:00 · 30-minute slots · Asia/Shanghai',faculty()?button('+ Personal schedule','data-personal-schedule',true):'')+
+    return heading('MAKE TIME FOR GOOD QUESTIONS.','Meeting Calendar','Monday–Friday · 09:00–17:00 · 30-minute slots · Asia/Shanghai',faculty()?`<div class="o-card-actions">${button('Block time','data-wb-action="block"')}${button('+ Personal schedule','data-personal-schedule',true)}</div>`:'')+
       `<div class="o-toolbar">${button('←','data-week="-7" aria-label="Previous week"')}<strong>${date(days[0])}–${date(days[4])}, ${days[0].slice(0,4)}</strong>${button('→','data-week="7" aria-label="Next week"')}${button('This week','data-this-week')}${faculty()?button(S.busyMode?'Done editing availability':'Edit availability','data-busy-mode',S.busyMode):''}</div><div class="o-note">${S.busyMode?'Click an open slot to mark 30 minutes busy. Click a busy slot to reopen its entire block.':'Choose an available time. Meetings default to 30 minutes; 1 hour is also available. Other students’ meeting details stay private.'}</div><div class="o-week-grid">${days.map(d=>`<section class="o-day"><div class="o-day-title">${new Date(d+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'})}<span>${date(d)}</span></div>${Array.from({length:16},(_,i)=>{
       const m=9*60+i*30,occ=S.occupancy.find(x=>covers(x,d,m)),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&covers(x,d,m));
       const disabled=!!occ&&!(own&&(faculty()||own.owner_id===uid()));
@@ -322,6 +326,8 @@
     $('project-nav').innerHTML='<div class="o-side-label">IN ORBIT</div>'+activeRows('projects').slice(0,5).map(p=>`<button class="o-text-btn o-side-project" data-edit="projects" data-id="${p.id}"><span class="o-dot"></span>${E(p.name)}</button>`).join('');
     $('user-name').textContent=S.me.display_name;$('user-avatar').textContent=S.me.display_name.slice(0,2).toUpperCase();$('user-role').textContent=faculty()?'Faculty · Full access':'Student · Member access';$('crumb').textContent=names[S.view];
     $('o-content').innerHTML=(S.view==='home'?home():S.view==='calendar'?calendar():S.view==='members'?members():listView(S.view))+`<div class="o-footer"><span>Open Research on Behavior, Intelligence &amp; Technology</span><span>Links &amp; handoffs. No uploads.</span></div>`;
+    // Existing record links open the workbench; metadata editing stays inside it.
+    root.querySelectorAll('button[data-edit]').forEach(b=>{if(['projects','papers'].includes(b.dataset.edit)&&b.dataset.id!=='new'&&['Edit','Edit study','View study','View details'].includes(b.textContent))b.textContent='Open workbench';});
   }
   function recordForm(type,id,defaults={}){
     if(!['projects','papers','expenses','tasks','signals'].includes(type))return;
@@ -427,6 +433,7 @@
   }
   root.addEventListener('submit',async event=>{
     const form=event.target;if(form.id==='auth-form')return;event.preventDefault();if(!form.dataset.form||S.saving)return;
+    if(form.dataset.form.startsWith('wb-'))return workbench.submit(form);
     const context=formContext,data=new FormData(form),get=k=>String(data.get(k)??'').trim();
     const controls=[...form.querySelectorAll('button')];controls.forEach(b=>b.disabled=true);
     await mutate(async()=>{
@@ -466,6 +473,7 @@
     if(b.hasAttribute('data-close'))return close();
     if(b.hasAttribute('data-signout'))return signOut();
     if(!S.ready)return;
+    if(b.dataset.wbAction)return workbench.click(b);
     if(b.hasAttribute('data-focus-edit'))return focusEditor();
     if(b.hasAttribute('data-focus-add'))return changeFocus('add');
     if(b.dataset.focusAction)return changeFocus(b.dataset.focusAction,b.dataset.focusKey);
@@ -489,7 +497,7 @@
     if(b.dataset.layout&&Object.hasOwn(S.layouts,b.dataset.layout)&&['cards','list'].includes(b.dataset.mode)){const key=b.dataset.layout,mode=b.dataset.mode;S.layouts[key]=mode;render();root.querySelector(`[data-layout="${key}"][data-mode="${mode}"]`)?.focus();return;}
     if(b.hasAttribute('data-personal-schedule')&&faculty())return bookingForm(null,S.week,540,true);
     if(b.hasAttribute('data-refresh'))return loadWorkspace();
-    if(b.dataset.edit)return recordForm(b.dataset.edit,b.dataset.id);
+    if(b.dataset.edit)return ['projects','papers'].includes(b.dataset.edit)&&b.dataset.id!=='new'?workbench.open(b.dataset.edit,b.dataset.id):recordForm(b.dataset.edit,b.dataset.id);
     if(b.dataset.projectMembers)return projectMembers(b.dataset.projectMembers);
     if(b.dataset.addProjectPaper){const p=project(b.dataset.addProjectPaper);if(p&&!p.archived_at&&(faculty()||inProject(p.id)))recordForm('papers','new',{project_id:p.id});return;}
     if(b.hasAttribute('data-account'))return account();
@@ -506,7 +514,7 @@
     if(b.dataset.slot){
       const [d,h]=b.dataset.slot.split('/'),mins=Number(h),own=S.rows.calendar_slots.find(x=>!x.cancelled_at&&covers(x,d,mins)),occ=S.occupancy.find(x=>covers(x,d,mins));
       if(own?.kind==='meeting')return bookingForm(own.id);
-      if(faculty()&&S.busyMode)return mutate(()=>own?.kind==='busy'?rpc('orbit_cancel_slot',{p_id:own.id}):db.from('orbit_calendar_slots').insert({slot_date:d,start_hour:Math.floor(mins/60),start_minute:mins%60,duration_minutes:30,kind:'busy'}).select('id').single().then(unwrap),own?'Busy block reopened.':'Marked 30 minutes busy.');
+      if(faculty()&&S.busyMode){if(own?.kind==='busy')return workbench.unblock(own);return mutate(()=>db.from('orbit_calendar_slots').insert({slot_date:d,start_hour:Math.floor(mins/60),start_minute:mins%60,duration_minutes:30,kind:'busy'}).select('id').single().then(unwrap),'Marked 30 minutes busy.');}
       if(!occ)return bookingForm(null,d,mins);return;
     }
     if(b.hasAttribute('data-activate')&&faculty()){modal('Activate student',`<form data-form="activate"><p class="o-sub">The account must already exist in Supabase Auth with a confirmed email. No password is collected here.</p><div class="o-fields">${input('Student name','display_name','','text','required maxlength="100"')}${input('Confirmed email','email','','email','required')}</div>${formActions('Activate membership')}</form>`);return;}
@@ -553,7 +561,10 @@
   $('auth-retry').addEventListener('click',()=>loadWorkspace());
   // Static code-native stars; no image requests or tracking pixels.
   document.querySelectorAll('.o-main').forEach(main=>{const sky=document.createElement('div');sky.className='o-sky';sky.setAttribute('aria-hidden','true');const cover=main.classList.contains('o-auth');let seed=1289;const rand=()=>((seed=seed*16807%2147483647)-1)/2147483646;for(let i=0;i<(cover?620:210);i++){const star=document.createElement('span');star.className='o-star'+(i%47===0?' bright':'');const size=i%47===0?2.2:.6+rand()*1.4;const x=rand()*100,y=cover&&i>210?(x*.72+(rand()-.5)*44+100)%100:rand()*100;star.style.cssText=`left:${x}%;top:${y}%;width:${size}px;height:${size}px;--star-opacity:${.25+rand()*.65}`;sky.appendChild(star);}main.prepend(sky);});
+  let workbench;
   try{
+    if(typeof window.ORBIT_WORKBENCH!=='function')throw new Error('The workbench script could not load. Upload workbench.js with this update, then hard-refresh the page.');
+    workbench=window.ORBIT_WORKBENCH({S,E,button,modal,rpc,row,person,date,faculty,input,select,textarea,external,dateNow,errorText,render,recordForm,mutate,formActions,time,startMinutes,duration,context:()=>formContext});
     if(!window.supabase?.createClient)throw new Error('The sign-in library could not load. Check access to cdn.jsdelivr.net and reload this page.');
     // Sessions persist within this tab only. No passwords or research records
     // are stored in localStorage, and the preview widget bridge is not used.

@@ -550,3 +550,49 @@ html,body{margin:0;min-height:100%;background:#050919}body{font-family:Inter,"He
 #orbit-lab .o-focus-controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 #orbit-lab .o-focus-controls .o-btn{min-height:40px}
 @media(max-width:700px){#orbit-lab .o-focus-columns{grid-template-columns:1fr;gap:16px}#orbit-lab .o-focus-column{padding:18px}#orbit-lab .o-focus-add{grid-template-columns:minmax(0,1fr)}#orbit-lab .o-research-stats{grid-template-columns:1fr}}
+
+/* Research workbench · restrained editorial sections, not another task board. */
+#orbit-lab .o-dialog.o-workbench-dialog{width:min(1160px,96vw);max-width:1160px}
+#orbit-lab .wb-shell{font-size:17px;line-height:1.65;overflow-wrap:anywhere}
+#orbit-lab .wb-shell h2{font:36px var(--o-serif);margin:0 0 14px}
+#orbit-lab .wb-shell h3{font:29px var(--o-serif);margin:0 0 10px}
+#orbit-lab .wb-header{display:flex;justify-content:space-between;gap:24px;margin:8px 0 24px}
+#orbit-lab .wb-header>div{min-width:0}
+#orbit-lab .wb-header .o-card-actions{align-self:start;flex-shrink:0}
+#orbit-lab .wb-brief{border-left:3px solid var(--o-purple);padding:20px 24px;background:var(--o-panel2);margin:20px 0}
+#orbit-lab .wb-brief p{white-space:pre-wrap;margin:10px 0}
+#orbit-lab .wb-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:36px}
+#orbit-lab .wb-columns>div{min-width:0}
+#orbit-lab .wb-section{border-top:1px solid var(--o-border);padding:24px 0;margin:12px 0}
+#orbit-lab .wb-count{font:17px "ORBIT Source Sans",sans-serif;color:var(--o-muted);padding-left:8px}
+#orbit-lab .wb-entry{padding:18px 0;border-bottom:1px solid var(--o-border)}
+#orbit-lab .wb-entry-heading{display:flex;align-items:center;gap:12px}
+#orbit-lab .wb-entry-text{font-size:18px;white-space:pre-wrap;margin:8px 0}
+#orbit-lab .wb-context{color:var(--o-muted);white-space:pre-wrap;margin:10px 0}
+#orbit-lab .wb-move-line{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+#orbit-lab .wb-move-line>.wb-entry-text{flex:1;min-width:100px}
+#orbit-lab .wb-check{background:transparent;color:var(--o-purple);border:1px solid var(--o-border);border-radius:50%;width:32px;height:32px;flex-shrink:0;font-size:22px;line-height:1}
+#orbit-lab .wb-due{font-size:15px;color:var(--o-muted)}
+#orbit-lab .wb-due.is-late{color:var(--o-warm)}
+#orbit-lab .is-complete .wb-entry-text{text-decoration:line-through;color:var(--o-muted)}
+#orbit-lab .wb-entry-foot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:14px}
+#orbit-lab .wb-entry-actions{display:flex;gap:8px;flex-wrap:wrap}
+#orbit-lab .wb-entry-actions .o-btn{font-size:14px;min-height:36px;padding:5px 9px;background:transparent}
+#orbit-lab .wb-shell details{margin:18px 0}
+#orbit-lab .wb-shell summary,#orbit-lab .wb-connections-summary summary{cursor:pointer;font-size:17px;padding:10px 0;color:var(--o-purple)}
+#orbit-lab .wb-entry-form{display:grid;gap:14px;padding:18px 0}
+#orbit-lab .wb-move-form{grid-template-columns:minmax(0,1fr) 150px}
+#orbit-lab .wb-move-form>.o-note,#orbit-lab .wb-form-actions{grid-column:1/-1}
+#orbit-lab .wb-form-actions,#orbit-lab .wb-trail-types{display:flex;gap:10px;flex-wrap:wrap}
+#orbit-lab .wb-entry-form textarea{min-height:90px}
+#orbit-lab .wb-entry-form input,#orbit-lab .wb-shell textarea,#orbit-lab .wb-shell select{font-size:17px}
+#orbit-lab .wb-empty{color:var(--o-muted);padding:16px 0}
+#orbit-lab .wb-paper,#orbit-lab .wb-connection{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 0;border-bottom:1px solid var(--o-border)}
+#orbit-lab .wb-paper>span:first-child,#orbit-lab .wb-connection>span:first-child{flex:1;min-width:140px}
+#orbit-lab .wb-removed{border-top:1px solid var(--o-border);padding-top:12px}
+#orbit-lab .wb-status:not(:empty){padding:10px 0;color:var(--o-green)}
+#orbit-lab .wb-status .o-btn{margin-left:12px}
+#orbit-lab .wb-error:empty{display:none}
+#orbit-lab .wb-error:not(:empty){padding:12px 0}
+@media(max-width:800px){#orbit-lab .wb-columns{grid-template-columns:minmax(0,1fr);gap:0}#orbit-lab .wb-header{display:block}#orbit-lab .wb-header .o-card-actions{margin-top:14px}#orbit-lab .wb-brief{padding:16px}#orbit-lab .wb-shell h2{font-size:30px}}
+@media(max-width:480px){#orbit-lab .wb-move-form{grid-template-columns:minmax(0,1fr)}#orbit-lab .wb-entry-actions .o-btn{min-height:42px}#orbit-lab .wb-entry-foot{display:block}#orbit-lab .wb-entry-actions{margin-top:10px}}
